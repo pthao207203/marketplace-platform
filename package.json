@@ -1,0 +1,19 @@
+{
+  "name": "marketplace-platform",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "private": true,
+  "packageManager": "pnpm@10.16.1",
+  "scripts": {
+    "dev:api": "pnpm --filter backend-api dev",
+    "dev:web": "pnpm --filter admin-web dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "dev": "pnpm -r --parallel --filter backend-api --filter admin-web dev"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

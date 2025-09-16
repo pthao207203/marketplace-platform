@@ -1,0 +1,26 @@
+# Node
+node_modules/
+pnpm-debug.log*
+npm-debug.log*
+yarn-debug.log*
+.yarn/*
+.yarnrc
+.yarnrc.yml
+
+# Build outputs
+dist/
+apps/**/dist/
+
+# Env & secrets
+.env
+.env.*
+!*.example
+
+# OS / IDE
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+EOF
+
+apps/backend-api/node_modules
+apps/admin-web/node_modules
