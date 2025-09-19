@@ -1,0 +1,20 @@
+:root {
+  --bg: #fff;
+  --fg: #111827;
+  --muted: #6b7280;
+  --brand: #2563eb;
+  --border: #e5e7eb;
+  --surface: #f9fafb;
+}
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+a { color: var(--brand); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.page { padding: 20px; }
+.list { list-style: none; padding: 0; margin: 0; }
+.list__item { padding: 8px 0; border-bottom: 1px solid var(--border); }
+.form { display: grid; gap: 12px; max-width: 360px; }
+.form__row { display: grid; gap: 6px; }
+input { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
+.btn { padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; background: #fff; cursor: pointer; }
