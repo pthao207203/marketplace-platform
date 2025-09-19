@@ -8,9 +8,8 @@ app.use(helmet());
 app.use(express.json());
 app.use(cors({ origin: process.env.CORS_ORIGIN?.split(',') ?? ['http://localhost:5173'] }));
 
-app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, uptime: process.uptime() });
-});
+const routeAdmin = require("./routes/admin/index.route");
+routeAdmin(app);
 
 const PORT = Number(process.env.PORT ?? 8080);
 app.listen(PORT, () => {
