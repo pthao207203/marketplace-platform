@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from 'express'
-import { index, stats } from '../../controllers/dashboard.controller'
+import { index, stats } from '../../controllers/admin/dashboard.controller'
 
 const router = Router()
 
