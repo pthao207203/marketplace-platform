@@ -1,24 +1,30 @@
-import { Routes, Route, Navigate } from "react-router-dom";
-import AppLayout from "./layouts/AppLayout.tsx";
-import Dashboard from "./pages/Dashboard.js";
-import Products from "./pages/Products.js";
-import ProductDetail from "./pages/ProductDetail.js";
-import Login from "./pages/Login.js";
-import NotFound from "./pages/NotFound.js";
+import { BrowserRouter as Router, Routes, Route } from "react-router";
+import SignIn from "./pages/AuthPages/SignIn";
+import SignUp from "./pages/AuthPages/SignUp";
+import NotFound from "./pages/OtherPage/NotFound";
+import AppLayout from "./layouts/AppLayout";
+import { ScrollToTop } from "./components/common/ScrollToTop";
+import Home from "./pages/Dashboard/Home";
 
-function App() {
+export default function App() {
   return (
-    <Routes>
-      <Route element={<AppLayout />}>
-        <Route index element={<Navigate to="/dashboard" replace />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/products" element={<Products />} />
-        <Route path="/products/:id" element={<ProductDetail />} />
-      </Route>
-      <Route path="/login" element={<Login />} />
-      <Route path="*" element={<NotFound />} />
-    </Routes>
+    <>
+      <Router>
+        <ScrollToTop />
+        <Routes>
+          {/* Dashboard Layout */}
+          <Route element={<AppLayout />}>
+            <Route index path="/" element={<Home />} />
+          </Route>
+
+          {/* Auth Layout */}
+          <Route path="/signin" element={<SignIn />} />
+          <Route path="/signup" element={<SignUp />} />
+
+          {/* Fallback Route */}
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </Router>
+    </>
   );
 }
-
-export default App;
