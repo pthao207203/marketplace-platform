@@ -1,15 +1,20 @@
 // src/controllers/auth.controller.ts
 import type { Request, Response } from 'express';
 import User, { type UserDoc } from '../../models/user.model';
-import { verifyPassword } from '../../utils/password';        // scrypt/bcrypt tuỳ bạn
+import PendingSignup from '../../models/pendingregister.model';
+import { hashPassword, verifyPassword } from '../../utils/password';        // scrypt/bcrypt tuỳ bạn
 import { signAccessToken } from '../../utils/jwt';
-import { USER_STATUS, USER_DELETED } from '../../constants/user.constants';
+import { USER_STATUS, USER_DELETED, USER_ROLE } from '../../constants/user.constants';
 import {
   roleIsShopOrAdmin,
   toRoleLabel,
   toStatusLabel,
   toDeletedLabel,
 } from '../../utils/user-mapper';
+import { gen6 } from '../../utils/otp';
+import { sendOtpSms } from '../../utils/sms';
+import { signPrecheckToken, verifyPrecheckToken } from '../../utils/precheck';
+import { adminAuth } from '../../lib/firebase-admin';
 
 type LoginUserLean = Pick<
   UserDoc,
@@ -40,19 +45,20 @@ export async function loginClient(req: Request, res: Response) {
   const traceId = (req.headers['x-request-id'] as string) || undefined;
 
   try {
-    const { userMail, userName, password } = (req.body ?? {}) as {
+    const { userMail, userPhone, userName, password } = (req.body ?? {}) as {
+      userPhone?: string;
       userMail?: string;
       userName?: string;
       password?: string;
     };
 
-    if (!password || (!userMail && !userName)) {
+    if (!password || (!userMail && !userName && !userPhone)) {
       return fail(
         res,
         400,
         'AUTH_MISSING_CREDENTIALS',
         'Thiếu thông tin đăng nhập.',
-        { required: ['password', 'userMail | userName'] },
+        { required: ['password', 'userMail | userName | userPhone'] },
         'Gửi JSON body: {"userMail":"...","password":"..."} và Content-Type: application/json.',
         traceId
       );
@@ -61,6 +67,7 @@ export async function loginClient(req: Request, res: Response) {
     const query: Record<string, unknown> = {};
     if (userMail) query.userMail = userMail.toLowerCase().trim();
     if (userName) query.userName = userName.trim();
+    if (userPhone) query.userPhone = userPhone;
 
     const user = await User.findOne(query)
       .select('_id userPassword userStatus userDeleted userRole userName userMail')
@@ -71,9 +78,9 @@ export async function loginClient(req: Request, res: Response) {
         res,
         401,
         'AUTH_USER_NOT_FOUND',
-        'Email/Tên đăng nhập không tồn tại hoặc không đúng.',
+        'Email/Tên đăng nhập/Số điện thoại không tồn tại hoặc không đúng.',
         { identity: userMail ?? userName },
-        'Kiểm tra lại userMail/userName hoặc tạo user seed.',
+        'Kiểm tra lại userMail/userName/userPhone hoặc đăng ký mới.',
         traceId
       );
     }
@@ -138,5 +145,102 @@ export async function loginClient(req: Request, res: Response) {
       'Kiểm tra server logs với traceId (nếu có) để biết thêm chi tiết.',
       traceId
     );
+  }
+}
+
+export async function precheckPhone(req: Request, res: Response) {
+  try {
+    const { phone } = (req.body ?? {}) as { phone?: string };
+    if (!phone) return fail(res, 400, 'MISSING_PHONE', 'Thiếu số điện thoại.');
+
+    // (tuỳ chọn) Chuẩn hoá phone sang E.164 ở đây
+    const existed = await User.findOne({ userPhone: phone, userDeleted: USER_DELETED.NO })
+      .select('_id').lean();
+    if (existed) {
+      return fail(res, 409, 'PHONE_ALREADY_USED', 'Số điện thoại đã được sử dụng.');
+    }
+
+    const nonce = signPrecheckToken({ phone, purpose: 'register' }, 600);
+    return ok(res, { allowed: true, nonce, expiresInSec: 600 });
+  } catch (err: any) {
+    console.error('precheckPhone error', err);
+    return fail(res, 500, 'INTERNAL', 'Lỗi hệ thống.', { reason: err?.message });
+  }
+}
+
+export async function register(req: Request, res: Response) {
+  try {
+    const { idToken, name, password, nonce } = (req.body ?? {}) as {
+      idToken?: string; name?: string; password?: string; nonce?: string;
+    };
+    if (!idToken || !name || !password || !nonce) {
+      return fail(res, 400, 'MISSING_FIELDS', 'Thiếu idToken/name/password/nonce.');
+    }
+
+    // 1) Verify nonce của backend
+    let pre;
+    try {
+      pre = verifyPrecheckToken(nonce); // { phone, purpose }
+    } catch (e: any) {
+      return fail(res, 401, 'INVALID_NONCE', 'Nonce không hợp lệ hoặc đã hết hạn.');
+    }
+    if (pre.purpose !== 'register') {
+      return fail(res, 400, 'NONCE_PURPOSE_MISMATCH', 'Sai mục đích nonce.');
+    }
+
+    // 2) Verify idToken từ Firebase
+    const decoded = await adminAuth.verifyIdToken(idToken);
+    const phoneFromFirebase = decoded.phone_number;
+    if (!phoneFromFirebase) {
+      return fail(res, 400, 'NO_PHONE_IN_TOKEN', 'idToken không chứa phone_number.');
+    }
+
+    // 3) Phone trong idToken phải trùng phone trong nonce
+    if (phoneFromFirebase !== pre.phone) {
+      return fail(res, 400, 'PHONE_MISMATCH', 'Số điện thoại xác thực không khớp precheck.', {
+        precheckPhone: pre.phone, tokenPhone: phoneFromFirebase,
+      });
+    }
+
+    // 4) Double-check: phone chưa dùng
+    const existed = await User.findOne({ userPhone: pre.phone, userDeleted: USER_DELETED.NO })
+      .select('_id').lean();
+    if (existed) {
+      return fail(res, 409, 'PHONE_ALREADY_USED', 'Số điện thoại đã được sử dụng.');
+    }
+
+    // 5) Tạo user
+    const passHash = await hashPassword(password);
+    const user = await User.create({
+      userName: name,
+      userPassword: passHash,
+      userMail: `${pre.phone}@placeholder.local`, // hoặc nới lỏng schema nếu không cần email
+      userPhone: pre.phone,
+      userRole: USER_ROLE.CUSTOMER,
+      userStatus: USER_STATUS.ACTIVE,
+      userDeleted: USER_DELETED.NO,
+      userCreated: { at: new Date() },
+    });
+
+    const token = signAccessToken({
+      sub: String(user._id),
+      role: toRoleLabel(user.userRole),
+      status: toStatusLabel(user.userStatus),
+      deleted: toDeletedLabel(user.userDeleted),
+    });
+
+    return ok(res, {
+      user: {
+        id: String(user._id),
+        userName: user.userName,
+        userPhone: user.userPhone,
+        userRole: toRoleLabel(user.userRole),
+        userStatus: toStatusLabel(user.userStatus),
+      },
+      token,
+    });
+  } catch (err: any) {
+    console.error('registerWithFirebasePhone error', err);
+    return fail(res, 401, 'INVALID_ID_TOKEN', 'idToken không hợp lệ hoặc đã hết hạn.', { reason: err?.message });
   }
 }

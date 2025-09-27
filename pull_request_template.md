@@ -1,6 +1,6 @@
 ## ✅ Checklist tự review pull trước khi ready để trainer review (Java Spring Boot)
 
-- [ ] Sử dụng **thụt lề 4 spaces** đồng nhất ở tất cả các files `.ts`, `.json`, `.tsx`, v.v. (cấu hình lại VSCode nếu chưa setup).
+- [ ] Sử dụng **thụt lề 2 spaces** đồng nhất ở tất cả các files `.ts`, `.json`, `.tsx`, v.v. (cấu hình lại VSCode nếu chưa setup).
 - [ ] Cuối mỗi file cần có **end line** (`\n`) để tránh lỗi đỏ khi diff trên Git.
 - [ ] `.gitignore` các file nhạy cảm (VD: `.env`, `/node_modules/` ...).
 - [ ] Kiểm tra mỗi pull request **chỉ có 1 commit**, nếu nhiều hơn hãy dùng `git rebase -i` để gộp commit.
