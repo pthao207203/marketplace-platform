@@ -2,6 +2,7 @@
   "compilerOptions": {
     "target": "ES2022",
     "module": "ES2022",
+    "types": [],
     "moduleResolution": "bundler",
     "outDir": "dist",
     "rootDir": "src",

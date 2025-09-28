@@ -48,6 +48,7 @@ export default function MonthlyTarget() {
     fill: {
       type: "solid",
       colors: ["#F25C05"],
+
     },
     stroke: {
       lineCap: "round",
@@ -65,6 +66,7 @@ export default function MonthlyTarget() {
   }
   return (
     <div className="h-full rounded-2xl border border-gray-200 bg-gray-100 dark:border-gray-800 dark:bg-white/[0.03]">
+
       <div className="px-5 pt-5 bg-white shadow-default rounded-2xl pb-11 dark:bg-gray-900 sm:px-6 sm:pt-6">
         <div className="flex justify-between">
           <div>

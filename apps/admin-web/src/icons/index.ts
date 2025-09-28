@@ -1,7 +1,9 @@
+
 export { default as AuthenticationIcon } from "./authentication.png"; 
 export { default as ShopIcon }        from "./shop.png"; 
 export { default as PolicyIcon }      from "./policy.png"; 
 export { default as SettingIcon }     from "./settings.png"; 
+
 export { default as PlusIcon }        from "./plus.svg?react";
 export { default as CloseIcon }       from "./close.svg?react";
 export { default as BoxIcon }         from "./box.svg?react";

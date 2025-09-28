@@ -2,6 +2,7 @@ import EcommerceMetrics from "../../components/ecommerce/EcommerceMetrics";
 import SalesChart from "../../components/ecommerce/SalesChart";
 import MonthlyTarget from "../../components/ecommerce/MonthlyTarget";
 import PageMeta from "../../components/common/PageMeta";
+
 export default function Home() {
   return (
     <>

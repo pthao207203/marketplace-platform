@@ -5,10 +5,12 @@ import { Link, useLocation } from "react-router";
 import {
   SettingIcon,
   BoxCubeIcon,
+
   ChevronDownIcon,
   GridIcon,
   HorizontaLDots,
   ListIcon,
+
   AuthenticationIcon,
   PolicyIcon,
   UserCircleIcon,
@@ -191,6 +193,7 @@ const AppSidebar: React.FC = () => {
             </button>
           ) : (
             nav.path && ( 
+
               <Link
                 to={nav.path}
                 className={`menu-item group ${
@@ -229,6 +232,7 @@ const AppSidebar: React.FC = () => {
                 {nav.subItems.map((subItem) => (
                   <li key={subItem.name}>
                     <Link
+
   to={subItem.path}
   className="menu-dropdown-item"
   style={
@@ -310,6 +314,7 @@ const AppSidebar: React.FC = () => {
                 alt="Logo"
                 width={250}
                 height={100}
+
               />
             </>
           ) : (
@@ -322,7 +327,6 @@ const AppSidebar: React.FC = () => {
           )}
         </Link>
       </div>
-
       <div className="flex flex-col overflow-y-auto duration-300 ease-linear no-scrollbar">
         <nav className="mb-6">
           <div className="flex flex-col gap-4">
@@ -352,6 +356,7 @@ const AppSidebar: React.FC = () => {
               >
                 {isExpanded || isHovered || isMobileOpen ? (
                   "System"
+
                 ) : (
                   <HorizontaLDots />
                 )}
