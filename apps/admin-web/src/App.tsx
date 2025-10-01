@@ -5,6 +5,7 @@ import NotFound from "./pages/OtherPage/NotFound";
 import AppLayout from "./layouts/AppLayout";
 import { ScrollToTop } from "./components/common/ScrollToTop";
 import Home from "./pages/Dashboard/Home";
+import BasicTables from "./pages/Tables/BasicTables";
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
           {/* Dashboard Layout */}
           <Route element={<AppLayout />}>
             <Route index path="/" element={<Home />} />
+            <Route path="/basic-tables" element={<BasicTables />} />
           </Route>
 
           {/* Auth Layout */}
