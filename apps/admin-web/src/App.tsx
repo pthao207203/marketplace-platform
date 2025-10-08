@@ -5,6 +5,7 @@ import NotFound from "./pages/OtherPage/NotFound";
 import AppLayout from "./layouts/AppLayout";
 import { ScrollToTop } from "./components/common/ScrollToTop";
 import Home from "./pages/Dashboard/Home";
+import ListOfOrder from "./pages/Orders/ListOfOrder";
 
 export default function App() {
   return (
@@ -15,6 +16,11 @@ export default function App() {
           {/* Dashboard Layout */}
           <Route element={<AppLayout />}>
             <Route index path="/" element={<Home />} />
+          </Route>
+
+          {/* Order Layout */}
+          <Route element={<AppLayout />}>
+            <Route index path="/listoforder" element={<ListOfOrder />} />
           </Route>
 
           {/* Auth Layout */}
