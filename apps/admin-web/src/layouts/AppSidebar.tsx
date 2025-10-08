@@ -45,7 +45,7 @@ const navItems: NavItem[] = [
   {
     name: "Orders",
     icon: <ListIcon />,
-    subItems: [{ name: "Basic Tables", path: "/basic-tables", pro: false }],
+    subItems: [{ name: "Order list", path: "/listoforder", pro: false }],
   },
 ];
 
