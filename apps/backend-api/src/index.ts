@@ -18,14 +18,6 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Mount /api prefix ở đây
-app.use('/api', (req, res, next) => {
-  adminRouteIndex(req.app);
-  clientRouteIndex(req.app);
-  next();
-});
-
-// Hoặc cách khác (sạch hơn):
 const apiRouter = express.Router();
 adminRouteIndex(apiRouter);
 clientRouteIndex(apiRouter);
