@@ -1,15 +1,15 @@
-import type { Application } from 'express'       
-import { systemConfig } from '../../config/system' 
-import dashboardRoute from './dashboard.route'  
-import authRoute from './auth.routes'  
+import type { Application } from 'express';
+import authRoute from './auth.routes';
+import dashboardRoute from './dashboard.route';
+import orderRoute from './order.route';
 
-module.exports = (app:Application) => {
-  app.use(
-    systemConfig.prefixAdmin + `/dashboard`,
-    dashboardRoute
-  );
-  app.use(
-    systemConfig.prefixAdmin + `/auth`,
-    authRoute
-  );
+module.exports = (app: Application) => {
+  // /admin/auth/...
+  app.use('/admin/auth', authRoute);
+
+  // /admin/dashboard/...
+  app.use('/admin/dashboard', dashboardRoute);
+
+  // /admin/orders/...
+  app.use('/admin/orders', orderRoute);
 };
