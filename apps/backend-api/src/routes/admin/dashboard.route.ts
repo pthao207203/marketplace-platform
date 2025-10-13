@@ -1,12 +1,12 @@
-import { Router, type Request, type Response } from 'express'
-import { index, stats } from '../../controllers/admin/dashboard.controller'
+import { Router } from 'express';
+import { index, stats } from '../../controllers/admin/dashboard.controller';
 
-const router = Router()
+const router = Router();
 
-// GET /admin/dashboard/
+// GET /admin/dashboard
 router.get('/', index);
 
 // GET /admin/dashboard/stats
 router.get('/stats', stats);
 
-export default router
+export default router;
