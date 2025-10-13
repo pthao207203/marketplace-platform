@@ -1,3 +1,4 @@
+// apps/backend-api/src/routes/client/index.route.ts
 import type { Application } from 'express'       
 import { systemConfig } from '../../config/system' 
 import authRoute from './auth.routes'  

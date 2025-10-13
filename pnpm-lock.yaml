@@ -6,7 +6,11 @@ settings:
 
 importers:
 
-  .: {}
+  .:
+    dependencies:
+      react-router-dom:
+        specifier: ^7.9.3
+        version: 7.9.4(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
 
   apps/admin-web:
     dependencies:
@@ -37,9 +41,6 @@ importers:
       react-dom:
         specifier: ^19.1.1
         version: 19.1.1(react@19.1.1)
-      react-dropzone:
-        specifier: ^14.3.8
-        version: 14.3.8(react@19.1.1)
       react-helmet-async:
         specifier: ^2.0.5
         version: 2.0.5(react@19.1.1)
@@ -1143,10 +1144,6 @@ packages:
   asynckit@0.4.0:
     resolution: {integrity: sha512-Oei9OH4tRh0YqU3GxhX79dM/mwVgvbZJaSNaRk+bshkj0S5cfHcgYakreBjrHwatXKbz+IoIdYLxrKim2MjW0Q==}
 
-  attr-accept@2.2.5:
-    resolution: {integrity: sha512-0bDNnY/u6pPwHDMoF0FieU354oBi0a8rD9FcsLwzcGWbc8KS8KPIi7y+s13OlVY+gMWc/9xEMUgNE6Qm8ZllYQ==}
-    engines: {node: '>=4'}
-
   axios@1.12.2:
     resolution: {integrity: sha512-vMJzPewAlRyOgxV2dU0Cuz2O8zzzx9VYtbJOaBgXFeLc4IV/Eg50n4LowmehOOR61S8ZMpc2K5Sa7g6A4jfkUw==}
 
@@ -1505,10 +1502,6 @@ packages:
   file-entry-cache@8.0.0:
     resolution: {integrity: sha512-XXTUwCvisa5oacNGRP9SfNtYBNAMi+RPwBFmblZEF7N7swHYQS6/Zfk7SRwx4D5j3CH211YNRco1DEMNVfZCnQ==}
     engines: {node: '>=16.0.0'}
-
-  file-selector@2.1.2:
-    resolution: {integrity: sha512-QgXo+mXTe8ljeqUFaX3QVHc5osSItJ/Km+xpocx0aSqWGMSCf6qYs/VnzZgS864Pjn5iceMRFigeAV7AfTlaig==}
-    engines: {node: '>= 12'}
 
   fill-range@7.1.1:
     resolution: {integrity: sha512-YsGpe3WHLK8ZYi4tWDg2Jy3ebRz2rXowDxnld4bkQB00cc/1Zw9AWnC0i9ztDJitivtQvaI9KaLyKrc+hBW0yg==}
@@ -2231,12 +2224,6 @@ packages:
     peerDependencies:
       react: ^19.1.1
 
-  react-dropzone@14.3.8:
-    resolution: {integrity: sha512-sBgODnq+lcA4P296DY4wacOZz3JFpD99fp+hb//iBO2HHnyeZU3FwWyXJ6salNpqQdsZrgMrotuko/BdJMV8Ug==}
-    engines: {node: '>= 10.13'}
-    peerDependencies:
-      react: '>= 16.8 || 18.0.0'
-
   react-fast-compare@3.2.2:
     resolution: {integrity: sha512-nsO+KSNgo1SbJqJEYRE9ERzo7YtYbou/OqjSQKxV7jcKox7+usiUVZOAC+XnDOABXggQTno0Y1CpVnuWEc1boQ==}
 
@@ -2259,6 +2246,13 @@ packages:
       react: '>=18'
       react-dom: '>=18'
 
+  react-router-dom@7.9.4:
+    resolution: {integrity: sha512-f30P6bIkmYvnHHa5Gcu65deIXoA2+r3Eb6PJIAddvsT9aGlchMatJ51GgpU470aSqRRbFX22T70yQNUGuW3DfA==}
+    engines: {node: '>=20.0.0'}
+    peerDependencies:
+      react: '>=18'
+      react-dom: '>=18'
+
   react-router@7.9.1:
     resolution: {integrity: sha512-pfAByjcTpX55mqSDGwGnY9vDCpxqBLASg0BMNAuMmpSGESo/TaOUG6BllhAtAkCGx8Rnohik/XtaqiYUJtgW2g==}
     engines: {node: '>=20.0.0'}
@@ -2271,6 +2265,16 @@ packages:
 
   react-router@7.9.2:
     resolution: {integrity: sha512-i2TPp4dgaqrOqiRGLZmqh2WXmbdFknUyiCRmSKs0hf6fWXkTKg5h56b+9F22NbGRAMxjYfqQnpi63egzD2SuZA==}
+    engines: {node: '>=20.0.0'}
+    peerDependencies:
+      react: '>=18'
+      react-dom: '>=18'
+    peerDependenciesMeta:
+      react-dom:
+        optional: true
+
+  react-router@7.9.4:
+    resolution: {integrity: sha512-SD3G8HKviFHg9xj7dNODUKDFgpG4xqD5nhyd0mYoB5iISepuZAvzSr8ywxgxKJ52yRzf/HWtVHc9AWwoTbljvA==}
     engines: {node: '>=20.0.0'}
     peerDependencies:
       react: '>=18'
@@ -3687,8 +3691,6 @@ snapshots:
 
   asynckit@0.4.0: {}
 
-  attr-accept@2.2.5: {}
-
   axios@1.12.2:
     dependencies:
       follow-redirects: 1.15.11
@@ -4097,10 +4099,6 @@ snapshots:
   file-entry-cache@8.0.0:
     dependencies:
       flat-cache: 4.0.1
-
-  file-selector@2.1.2:
-    dependencies:
-      tslib: 2.8.1
 
   fill-range@7.1.1:
     dependencies:
@@ -4833,13 +4831,6 @@ snapshots:
       react: 19.1.1
       scheduler: 0.26.0
 
-  react-dropzone@14.3.8(react@19.1.1):
-    dependencies:
-      attr-accept: 2.2.5
-      file-selector: 2.1.2
-      prop-types: 15.8.1
-      react: 19.1.1
-
   react-fast-compare@3.2.2: {}
 
   react-helmet-async@2.0.5(react@19.1.1):
@@ -4859,6 +4850,12 @@ snapshots:
       react-dom: 19.1.1(react@19.1.1)
       react-router: 7.9.1(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
 
+  react-router-dom@7.9.4(react-dom@19.1.1(react@19.1.1))(react@19.1.1):
+    dependencies:
+      react: 19.1.1
+      react-dom: 19.1.1(react@19.1.1)
+      react-router: 7.9.4(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
+
   react-router@7.9.1(react-dom@19.1.1(react@19.1.1))(react@19.1.1):
     dependencies:
       cookie: 1.0.2
@@ -4868,6 +4865,14 @@ snapshots:
       react-dom: 19.1.1(react@19.1.1)
 
   react-router@7.9.2(react-dom@19.1.1(react@19.1.1))(react@19.1.1):
+    dependencies:
+      cookie: 1.0.2
+      react: 19.1.1
+      set-cookie-parser: 2.7.1
+    optionalDependencies:
+      react-dom: 19.1.1(react@19.1.1)
+
+  react-router@7.9.4(react-dom@19.1.1(react@19.1.1))(react@19.1.1):
     dependencies:
       cookie: 1.0.2
       react: 19.1.1

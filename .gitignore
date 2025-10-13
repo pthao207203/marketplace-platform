@@ -24,3 +24,6 @@ EOF
 
 apps/backend-api/node_modules
 apps/admin-web/node_modules
+packages/shared-types/node_modules
+apps/backend-api/src/lib/firebase-admin.ts
+apps/backend-api/.env

@@ -1,3 +1,4 @@
+// apps/backend-api/src/models/user.model.ts
 import {
   Schema,
   model,
@@ -14,9 +15,9 @@ import {
 // ===== Subdocuments =====
 const AddressSchema = new Schema(
   {
-    label: { type: String }, // ví dụ: "Nhà", "Cty"
+    label: { type: String }, 
     country: { type: String },
-    province: { type: String }, // Tỉnh/TP
+    province: { type: String }, 
     district: { type: String },
     ward: { type: String },
     street: { type: String },
@@ -111,7 +112,7 @@ const UserSchema = new Schema(
   }
 );
 
-// Tìm kiếm nhanh theo name/mail
+
 UserSchema.index({ userName: 'text', userMail: 'text' })
 
 export type UserDoc = InferSchemaType<typeof UserSchema> & { _id: Types.ObjectId }
