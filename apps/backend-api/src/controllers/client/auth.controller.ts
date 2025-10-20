@@ -11,10 +11,9 @@ import {
   toStatusLabel,
   toDeletedLabel,
 } from '../../utils/user-mapper';
-import { gen6 } from '../../utils/otp';
-import { sendOtpSms } from '../../utils/sms';
 import { signPrecheckToken, verifyPrecheckToken } from '../../utils/precheck';
 import { adminAuth } from '../../lib/firebase-admin';
+import https from 'node:https';
 
 type LoginUserLean = Pick<
   UserDoc,
@@ -161,11 +160,16 @@ export async function precheckPhone(req: Request, res: Response) {
     }
 
     const nonce = signPrecheckToken({ phone, purpose: 'register' }, 600);
+    console.log("Gửi OTP thành công")
     return ok(res, { allowed: true, nonce, expiresInSec: 600 });
   } catch (err: any) {
     console.error('precheckPhone error', err);
     return fail(res, 500, 'INTERNAL', 'Lỗi hệ thống.', { reason: err?.message });
   }
+}
+
+function b64urlJson(s: string) {
+  return JSON.parse(Buffer.from(s, 'base64url').toString('utf8'));
 }
 
 export async function register(req: Request, res: Response) {
@@ -176,7 +180,24 @@ export async function register(req: Request, res: Response) {
     if (!idToken || !name || !password || !nonce) {
       return fail(res, 400, 'MISSING_FIELDS', 'Thiếu idToken/name/password/nonce.');
     }
+    const parts = idToken.split('.');
+    console.log('[DBG] tokenParts=', parts.length);
+    const hdr = b64urlJson(parts[0]);
+    const pl  = b64urlJson(parts[1]);
 
+    console.log('[DBG] token.alg=', hdr.alg, 'kid=', (hdr.kid||''));
+    console.log('[DBG] token.aud=', pl.aud, 'iss=', pl.iss);
+
+  https.get('https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com',
+    (resp) => {
+      let data = '';
+      resp.on('data', c => data += c);
+      resp.on('end', () => {
+        const keys = JSON.parse(data); // { kid1: certPEM, kid2: certPEM, ... }
+        console.log('[DBG] keys count=', Object.keys(keys).length);
+        console.log('[DBG] has kid?', !!keys['e81f052aef040a97c39d265381de6cb434bc35f3']); // điền đúng kid log ra
+      });
+    }).on('error', err => console.error('keys fetch error', err));
     // 1) Verify nonce của backend
     let pre;
     try {
