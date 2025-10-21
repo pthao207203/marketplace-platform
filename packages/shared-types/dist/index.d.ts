@@ -1,27 +1,39 @@
-/** User / Seller (public) */
-export interface UserPublic {
-    id: string;
-    displayName: string;
-    rating?: number;
-}
-export type Condition = 'new' | 'like_new' | 'used_good' | 'used_fair';
-/** Sản phẩm cơ bản hiển thị ở danh sách */
-export interface Product {
+export type VND = number;
+export interface AuctionItem {
     id: string;
     title: string;
-    price: number;
+    imageUrl: string;
     quantity: number;
-    images: string[];
-    condition: Condition;
-    seller: UserPublic;
-    createdAt: string;
+    currentPrice: VND;
+    currency: "VND";
+    endsAt: string;
+    condition?: string;
+    featured?: boolean;
 }
-/** API wrapper chuẩn */
-export interface ApiSuccess<T> {
-    ok: true;
-    data: T;
+export interface Category {
+    id: string;
+    name: string;
+    icon: string;
+    order?: number;
 }
-export interface ApiError {
-    ok: false;
-    error: string;
+export interface SuggestionItem {
+    id: string;
+    title: string;
+    imageUrl: string;
+    conditionLabel?: string;
+    quantity: number;
+    rating?: number;
+    endsInSec?: number;
+    currentPrice: VND;
+    currency: "VND";
+}
+export interface HomeResponse {
+    featuredAuction: AuctionItem | null;
+    categories: Category[];
+    suggestions: {
+        items: SuggestionItem[];
+        page: number;
+        pageSize: number;
+        total: number;
+    };
 }
