@@ -41,6 +41,31 @@ const BankSchema = new Schema(
   { _id: false }
 )
 
+// A single wallet top-up record (user deposited from bank into app)
+const WalletTopUpSchema = new Schema(
+  {
+    amount: { type: Number, required: true },
+    currency: { type: String, default: 'VND' },
+    // snapshot of bank details used for this top-up (optional)
+    bank: { type: BankSchema, default: undefined },
+    transactionId: { type: String }, // optional external bank transfer id / reference
+    status: { type: String, enum: ['pending', 'completed', 'failed'], default: 'completed' },
+    createdAt: { type: Date, default: Date.now },
+  },
+  { _id: true, timestamps: false }
+)
+
+// Wallet container: balance and list of top-ups
+const WalletSchema = new Schema(
+  {
+    balance: { type: Number, default: 0 },
+    topups: { type: [WalletTopUpSchema], default: [] },
+    // optional: last time wallet changed (top-up / deduction)
+    updatedAt: { type: Date },
+  },
+  { _id: false }
+)
+
 const CartItemSchema = new Schema(
   {
     productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
@@ -102,6 +127,7 @@ const UserSchema = new Schema(
     userAvatar: { type: String },
     userCreated: { type: CreatedSchema, default: {} },
     userBank: { type: BankSchema, default: {} },
+    userWallet: { type: WalletSchema, default: {} },
     userRate: { type: Number, default: 0 },
     userCart: { type: [CartItemSchema], default: [] },
   },
