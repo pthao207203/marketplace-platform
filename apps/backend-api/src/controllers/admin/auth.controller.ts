@@ -10,31 +10,14 @@ import {
   toStatusLabel,
   toDeletedLabel,
 } from '../../utils/user-mapper';
+import { sendSuccess, sendError } from '../../utils/response';
 
 type LoginUserLean = Pick<
   UserDoc,
   '_id' | 'userPassword' | 'userStatus' | 'userDeleted' | 'userRole' | 'userName' | 'userMail'
 >;
 
-// ---------- helpers: response shape ----------
-function ok<T>(res: Response, data: T, traceId?: string) {
-  return res.json({ success: true, data, meta: { traceId } });
-}
-function fail(
-  res: Response,
-  status: number,
-  code: string,
-  message: string,
-  details?: Record<string, unknown>,
-  hint?: string,
-  traceId?: string
-) {
-  return res.status(status).json({
-    success: false,
-    error: { code, message, details, hint },
-    meta: { traceId },
-  });
-}
+// using shared response helpers
 
 export async function loginShopAdmin(req: Request, res: Response) {
   const traceId = (req.headers['x-request-id'] as string) || undefined;
@@ -47,15 +30,7 @@ export async function loginShopAdmin(req: Request, res: Response) {
     };
 
     if (!password || (!userMail && !userName)) {
-      return fail(
-        res,
-        400,
-        'AUTH_MISSING_CREDENTIALS',
-        'Thiếu thông tin đăng nhập.',
-        { required: ['password', 'userMail | userName'] },
-        'Gửi JSON body: {"userMail":"...","password":"..."} và Content-Type: application/json.',
-        traceId
-      );
+      return sendError(res, 400, 'Thiếu thông tin đăng nhập.', { code: 'AUTH_MISSING_CREDENTIALS', required: ['password', 'userMail | userName'], hint: 'Gửi JSON body: {"userMail":"...","password":"..."} và Content-Type: application/json.', traceId });
     }
 
     const query: Record<string, unknown> = {};
@@ -67,55 +42,20 @@ export async function loginShopAdmin(req: Request, res: Response) {
       .lean<LoginUserLean>();
 
     if (!user) {
-      return fail(
-        res,
-        401,
-        'AUTH_USER_NOT_FOUND',
-        'Email/Tên đăng nhập không tồn tại hoặc không đúng.',
-        { identity: userMail ?? userName },
-        'Kiểm tra lại userMail/userName hoặc tạo user seed.',
-        traceId
-      );
+      return sendError(res, 401, 'Email/Tên đăng nhập không tồn tại hoặc không đúng.', { code: 'AUTH_USER_NOT_FOUND', identity: userMail ?? userName, hint: 'Kiểm tra lại userMail/userName hoặc tạo user seed.', traceId });
     }
 
     if (user.userStatus !== USER_STATUS.ACTIVE || user.userDeleted !== USER_DELETED.NO) {
-      return fail(
-        res,
-        403,
-        'AUTH_ACCOUNT_BLOCKED',
-        'Tài khoản đang bị khóa hoặc đã bị xoá.',
-        {
-          userStatus: toStatusLabel(user.userStatus),
-          userDeleted: toDeletedLabel(user.userDeleted),
-        },
-        'Liên hệ quản trị viên để kích hoạt tài khoản.',
-        traceId
-      );
+      return sendError(res, 403, 'Tài khoản đang bị khóa hoặc đã bị xoá.', { code: 'AUTH_ACCOUNT_BLOCKED', userStatus: toStatusLabel(user.userStatus), userDeleted: toDeletedLabel(user.userDeleted), hint: 'Liên hệ quản trị viên để kích hoạt tài khoản.', traceId });
     }
 
     if (!roleIsShopOrAdmin(user.userRole)) {
-      return fail(
-        res,
-        403,
-        'AUTH_ROLE_FORBIDDEN',
-        'Tài khoản không có quyền truy cập (không phải shop/admin).',
-        { userRole: toRoleLabel(user.userRole) },
-        'Đăng nhập bằng tài khoản có role shop hoặc admin.',
-        traceId
-      );
+      return sendError(res, 403, 'Tài khoản không có quyền truy cập (không phải shop/admin).', { code: 'AUTH_ROLE_FORBIDDEN', userRole: toRoleLabel(user.userRole), hint: 'Đăng nhập bằng tài khoản có role shop hoặc admin.', traceId });
     }
 
     const okPass = await verifyPassword(password, user.userPassword);
     if (!okPass) {
-      return fail(
-        res,
-        401,
-        'AUTH_PASSWORD_INVALID',
-        'Mật khẩu không đúng.',
-        undefined,
-        'Nhập lại mật khẩu hoặc dùng chức năng quên mật khẩu.',
-        traceId
-      );
+      return sendError(res, 401, 'Mật khẩu không đúng.', { code: 'AUTH_PASSWORD_INVALID', hint: 'Nhập lại mật khẩu hoặc dùng chức năng quên mật khẩu.', traceId });
     }
 
     const token = signAccessToken({
@@ -125,31 +65,19 @@ export async function loginShopAdmin(req: Request, res: Response) {
       deleted: toDeletedLabel(user.userDeleted),
     });
 
-    return ok(
-      res,
-      {
-        user: {
-          id: String(user._id),
-          userName: user.userName,
-          userMail: user.userMail,
-          userRole: toRoleLabel(user.userRole),      
-          userStatus: toStatusLabel(user.userStatus),
-        },
-        token,
+    return sendSuccess(res, {
+      user: {
+        id: String(user._id),
+        userName: user.userName,
+        userMail: user.userMail,
+        userRole: toRoleLabel(user.userRole),      
+        userStatus: toStatusLabel(user.userStatus),
       },
-      traceId
-    );
+      token,
+    });
   } catch (err: any) {
     // log nội bộ, response chuẩn ra ngoài
     console.error('login error', { traceId, err });
-    return fail(
-      res,
-      500,
-      'INTERNAL_ERROR',
-      'Lỗi hệ thống.',
-      { reason: err?.message ?? String(err) },
-      'Kiểm tra server logs với traceId (nếu có) để biết thêm chi tiết.',
-      traceId
-    );
+    return sendError(res, 500, 'Lỗi hệ thống.', { code: 'INTERNAL_ERROR', reason: err?.message ?? String(err), traceId });
   }
 }

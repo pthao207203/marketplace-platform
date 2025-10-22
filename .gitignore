@@ -24,4 +24,4 @@ EOF
 
 apps/backend-api/node_modules
 apps/admin-web/node_modules
-apps/backend-api/service-accounts/*.json
+apps/backend-api/service-accounts
