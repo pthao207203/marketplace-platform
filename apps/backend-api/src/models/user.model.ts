@@ -14,13 +14,13 @@ import {
 // ===== Subdocuments =====
 const AddressSchema = new Schema(
   {
-    label: { type: String }, // ví dụ: "Nhà", "Cty"
+    name: { type: String },
+    phone: { type: String },
+    label: { type: String },
     country: { type: String },
-    province: { type: String }, // Tỉnh/TP
-    district: { type: String },
+    province: { type: String }, 
     ward: { type: String },
     street: { type: String },
-    postalCode: { type: String },
     isDefault: { type: Boolean, default: false },
     location: {
       lat: Number,
@@ -35,7 +35,6 @@ const BankSchema = new Schema(
     bankName: String,
     accountNumber: String,
     accountHolder: String,
-    branch: String,
     swiftCode: String,
   },
   { _id: false }
@@ -126,7 +125,8 @@ const UserSchema = new Schema(
     userAddress: { type: [AddressSchema], default: [] },
     userAvatar: { type: String },
     userCreated: { type: CreatedSchema, default: {} },
-    userBank: { type: BankSchema, default: {} },
+    // user may have multiple bank accounts
+    userBanks: { type: [BankSchema], default: [] },
     userWallet: { type: WalletSchema, default: {} },
     userRate: { type: Number, default: 0 },
     userCart: { type: [CartItemSchema], default: [] },
