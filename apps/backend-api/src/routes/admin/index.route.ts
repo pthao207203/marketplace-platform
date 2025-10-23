@@ -5,6 +5,7 @@ import authRoute from './auth.route'
 import productRoute from './product.route' 
 import categoryRoute from './category.route'
 import brandRoute from './brand.route'
+import systemRoute from './system.route'
 
 module.exports = (app:Application) => {
   app.use(
@@ -26,5 +27,9 @@ module.exports = (app:Application) => {
   app.use(
     systemConfig.prefixAdmin + `/brands`,
     brandRoute
+  );
+  app.use(
+    systemConfig.prefixAdmin + `/system`,
+    systemRoute
   );
 };
