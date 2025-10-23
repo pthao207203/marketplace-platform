@@ -36,6 +36,7 @@ const BankSchema = new Schema(
     accountNumber: String,
     accountHolder: String,
     swiftCode: String,
+    isDefault: { type: Boolean, default: false },
   },
   { _id: false }
 )
