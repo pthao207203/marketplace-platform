@@ -3,6 +3,7 @@ import User from '../../models/user.model';
 import { sendSuccess, sendError } from '../../utils/response';
 import { Types } from 'mongoose';
 import { toStatusLabel } from '../../utils/user-mapper';
+import { hashPassword, verifyPassword } from '../../utils/password';
 import { getSystemSettings } from '../../models/systemSettings.model';
 
 function escapeRegExp(s: string) {
@@ -59,6 +60,113 @@ export async function getMyProfile(req: Request, res: Response) {
     return sendSuccess(res, profile);
   } catch (err: any) {
     console.error('getMyProfile error', err);
+    return sendError(res, 500, 'Server error', err?.message);
+  }
+}
+
+// GET /api/me/profile/edit -> profile payload for edit form: name, mail, phone, banks, default address
+export async function getProfileForEdit(req: Request, res: Response) {
+  try {
+    const userId = req.user?.sub;
+    if (!userId || !Types.ObjectId.isValid(String(userId))) return sendError(res, 401, 'Unauthorized');
+
+    const u = await User.findById(String(userId)).select('userName userMail userPhone userAddress userBanks').lean<any>();
+    if (!u) return sendError(res, 404, 'User not found');
+
+    // pick default address same as getMyProfile
+    let homeAddress: any = null;
+    if (Array.isArray(u.userAddress) && u.userAddress.length > 0) {
+      homeAddress = u.userAddress.find((a: any) => Boolean(a.isDefault)) || u.userAddress.find((a: any) => (a.label || '').toLowerCase() === 'nhà') || u.userAddress[0] || null;
+    }
+    
+    // include default bank if any
+    const defaultBank = Array.isArray((u as any).userBanks)
+      ? (u as any).userBanks.find((b: any) => Boolean(b.isDefault)) || null
+      : null;
+
+
+    const payload = {
+      name: u.userName,
+      mail: u.userMail,
+      phone: u.userPhone,
+      banks: defaultBank,
+      address: homeAddress,
+    };
+
+    return sendSuccess(res, payload);
+  } catch (err: any) {
+    console.error('getProfileForEdit error', err);
+    return sendError(res, 500, 'Server error', err?.message);
+  }
+}
+
+// PATCH /api/me/password/ -> change password (and optionally username)
+export async function patchPassword(req: Request, res: Response) {
+  try {
+    const userId = req.user?.sub;
+    if (!userId || !Types.ObjectId.isValid(String(userId))) return sendError(res, 401, 'Unauthorized');
+
+    const body = req.body || {};
+    const { oldPassword, newPassword } = body as { oldPassword?: string; newPassword?: string };
+    if (!oldPassword || !newPassword) return sendError(res, 400, 'Missing oldPassword or newPassword');
+
+    const user = await User.findById(String(userId)).select('userPassword').exec();
+    if (!user) return sendError(res, 404, 'User not found');
+
+    // verify old password
+    const ok = await verifyPassword(String(oldPassword), String((user as any).userPassword));
+    if (!ok) return sendError(res, 401, 'Old password is incorrect');
+
+    const updates: any = {};
+
+    // set new password hash
+    updates.userPassword = hashPassword(String(newPassword));
+
+    const updated = await User.findByIdAndUpdate(String(userId), { $set: updates }, { new: true }).select('userName').lean<{ userName?: string } | null>();
+    if (!updated) return sendError(res, 500, 'Unable to update user');
+
+    return sendSuccess(res, { name: updated.userName });
+  } catch (err: any) {
+    console.error('patchPassword error', err);
+    return sendError(res, 500, 'Server error', err?.message);
+  }
+}
+
+// PATCH /api/me -> update profile fields: name, phone, mail
+export async function patchProfile(req: Request, res: Response) {
+  try {
+    const userId = req.user?.sub;
+    if (!userId || !Types.ObjectId.isValid(String(userId))) return sendError(res, 401, 'Unauthorized');
+
+    const body = req.body || {};
+    const { name, phone, mail } = body;
+    if (typeof name === 'undefined' && typeof phone === 'undefined' && typeof mail === 'undefined') {
+      return sendError(res, 400, 'No fields to update');
+    }
+
+    const updates: any = {};
+    if (typeof name !== 'undefined') updates.userName = String(name).trim();
+    if (typeof phone !== 'undefined') updates.userPhone = String(phone).trim();
+    if (typeof mail !== 'undefined') updates.userMail = String(mail).toLowerCase().trim();
+
+    // uniqueness checks
+    if (updates.userMail) {
+      const exists = await User.findOne({ userMail: updates.userMail, _id: { $ne: userId } }).lean();
+      if (exists) return sendError(res, 409, 'Email already in use', { code: 'EMAIL_TAKEN' });
+    }
+    if (updates.userPhone) {
+      const existsP = await User.findOne({ userPhone: updates.userPhone, _id: { $ne: userId } }).lean();
+      if (existsP) return sendError(res, 409, 'Phone already in use', { code: 'PHONE_TAKEN' });
+    }
+
+    const updated = await User.findByIdAndUpdate(String(userId), { $set: updates }, { new: true })
+      .select('userName userMail userPhone')
+      .lean<{ userName?: string; userMail?: string; userPhone?: string } | null>();
+    if (!updated) return sendError(res, 404, 'User not found');
+
+    return sendSuccess(res, { name: updated.userName, mail: updated.userMail, phone: updated.userPhone });
+  } catch (err: any) {
+    console.error('patchProfile error', err);
     return sendError(res, 500, 'Server error', err?.message);
   }
 }
@@ -259,7 +367,13 @@ export async function createBank(req: Request, res: Response) {
       accountHolder: body.accountHolder,
       swiftCode: body.swiftCode,
       bankNameSnapshot: partnerName,
+      isDefault: Boolean(body.isDefault),
     };
+
+    // if this new bank is default, unset other defaults first
+    if (pushObj.isDefault) {
+      await User.updateOne({ _id: userId }, { $set: { 'userBanks.$[].isDefault': false } }).exec();
+    }
 
     const update = await User.findByIdAndUpdate(String(userId), { $push: { userBanks: pushObj } }, { new: true }).select('userBanks');
     const added = update?.userBanks?.slice(-1)[0] || null;
@@ -286,10 +400,15 @@ export async function updateBankByName(req: Request, res: Response) {
     if (!found) return sendError(res, 404, 'Bank account not found');
 
     // BankSchema doesn't include an _id (subdocuments only), update by array index instead.
-    const allowed = ['bankName', 'accountNumber', 'accountHolder', 'swiftCode'];
+    const allowed = ['bankName', 'accountNumber', 'accountHolder', 'swiftCode', 'isDefault'];
     const newBank: any = {};
     for (const k of allowed) {
       if (k in body) newBank[k] = body[k];
+    }
+
+    // if setting this bank to default, unset other defaults first
+    if (newBank.isDefault) {
+      await User.updateOne({ _id: userId }, { $set: { 'userBanks.$[].isDefault': false } }).exec();
     }
 
     // find index of the matched subdocument
