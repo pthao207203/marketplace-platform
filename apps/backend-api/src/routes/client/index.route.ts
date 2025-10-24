@@ -3,6 +3,7 @@ import { systemConfig } from '../../config/system'
 import authRoute from './auth.route' 
 import productRoute from './product.route' 
 import userRoute from './user.route'
+import orderRoute from './order.route'
 
 module.exports = (app:Application) => {
   app.use(
@@ -16,5 +17,9 @@ module.exports = (app:Application) => {
   app.use(
     `/api` + `/me`,
     userRoute
+  );
+  app.use(
+    `/api` + `/orders`,
+    orderRoute
   );
 };

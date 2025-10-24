@@ -15,6 +15,11 @@ const AuctionSchema = new Schema({
   bidHistory: { type: [BidHistorySchema], default: [] },
   condition: String,
   featured: { type: Boolean, default: false }
+  // finalization tracking: indicates whether auction has been processed by the finalizer
+  ,finalState: { type: String, enum: ['pending','processing','paid','payment_failed','no_bids'], default: 'pending' },
+  finalWinnerId: { type: Types.ObjectId, ref: 'User', required: false },
+  finalPrice: { type: Number, required: false },
+  finalizedAt: { type: Date, required: false }
 }, { timestamps: true });
 
 export type AuctionDoc = typeof AuctionSchema extends infer T ? any : any;
