@@ -6,10 +6,14 @@ import productRoute from './product.route'
 import categoryRoute from './category.route'
 import brandRoute from './brand.route'
 import systemRoute from './system.route'
+import { requireClientAuth } from '../../middlewares/auth';
 
 module.exports = (app:Application) => {
+  const adminMiddlewares = [requireClientAuth];
+
   app.use(
     systemConfig.prefixAdmin + `/dashboard`,
+    adminMiddlewares,
     dashboardRoute
   );
   app.use(
@@ -18,18 +22,22 @@ module.exports = (app:Application) => {
   );
   app.use(
     systemConfig.prefixAdmin + `/products`,
+    adminMiddlewares,
     productRoute
   );
   app.use(
     systemConfig.prefixAdmin + `/categories`,
+    adminMiddlewares,
     categoryRoute
   );
   app.use(
     systemConfig.prefixAdmin + `/brands`,
+    adminMiddlewares,
     brandRoute
   );
   app.use(
     systemConfig.prefixAdmin + `/system`,
+    adminMiddlewares,
     systemRoute
   );
 };

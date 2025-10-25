@@ -35,3 +35,23 @@ export const PRODUCT_DELETED_CODE: Record<'no' | 'yes', ProductDeletedCode> = {
   no: PRODUCT_DELETED.NO,
   yes: PRODUCT_DELETED.YES,
 };
+
+export const PRODUCT_PRICE_TYPE = {
+  FIXED: 1,
+  NEGOTIABLE: 2,
+  AUCTION: 3,
+} as const;
+export type ProductPriceType = typeof PRODUCT_PRICE_TYPE[keyof typeof PRODUCT_PRICE_TYPE];
+
+export const PRODUCT_PRICE_TYPE_VALUES = [PRODUCT_PRICE_TYPE.FIXED, PRODUCT_PRICE_TYPE.NEGOTIABLE, PRODUCT_PRICE_TYPE.AUCTION] as const;
+
+// Negotiation status enum (stored as Number)
+export const NEGOTIATION_STATUS = {
+  PENDING: 1,
+  ACCEPTED: 2,
+  REJECTED: 3,
+  CANCELLED: 4,
+} as const;
+export type NegotiationStatusCode = typeof NEGOTIATION_STATUS[keyof typeof NEGOTIATION_STATUS];
+
+export const NEGOTIATION_STATUS_VALUES = [NEGOTIATION_STATUS.PENDING, NEGOTIATION_STATUS.ACCEPTED, NEGOTIATION_STATUS.REJECTED, NEGOTIATION_STATUS.CANCELLED] as const;
