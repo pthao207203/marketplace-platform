@@ -54,6 +54,7 @@ const othersItems: NavItem[] = [
     icon: <SettingIcon />,
     name: "Setting",
     subItems: [
+      { name: "Language", path: "/language", pro: false},
       { name: "Alerts", path: "/alerts", pro: false },
       { name: "Avatar", path: "/avatars", pro: false },
       { name: "Badge", path: "/badge", pro: false },
