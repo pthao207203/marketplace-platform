@@ -1,5 +1,5 @@
 import { Schema, model, Types } from "mongoose";
-import { PRODUCT_STATUS, PRODUCT_DELETED } from "../constants/product.constants";
+import { PRODUCT_STATUS, PRODUCT_DELETED, PRODUCT_PRICE_TYPE } from "../constants/product.constants";
 
 // Product schema following the provided diagram
 const ReviewSchema = new Schema({
@@ -23,6 +23,8 @@ const ProductSchema = new Schema({
   productDescription: { type: String },
   // ProductPrice
   productPrice: { type: Number, required: true },
+  // ProductPriceType: fixed(1) | negotiable(2) | auction(3)
+  productPriceType: { type: Number, enum: Object.values(PRODUCT_PRICE_TYPE), default: PRODUCT_PRICE_TYPE.FIXED },
   // ProductUsageTime (in months)
   productUsageTime: { type: Number },
   // ProductMedia: array of media URLs (images/videos)
