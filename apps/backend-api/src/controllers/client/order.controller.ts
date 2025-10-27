@@ -313,3 +313,54 @@ export async function confirmDelivery(req: Request, res: Response) {
     return sendError(res, 500, 'Server error', err?.message);
   }
 }
+
+// POST /api/orders/:id/rate -> buyer rates the shop after delivery
+export async function rateShop(req: Request, res: Response) {
+  try {
+    const userId = req.user?.sub;
+    if (!userId || !Types.ObjectId.isValid(String(userId))) return sendError(res, 401, 'Unauthorized');
+
+    const orderId = req.params.id;
+    if (!orderId || !Types.ObjectId.isValid(String(orderId))) return sendError(res, 400, 'Invalid order id');
+
+    const body = req.body || {};
+    const rate = Number(body.rate || 0);
+    const description = String(body.description || '').trim();
+    const media = Array.isArray(body.media) ? body.media.filter((m: any) => typeof m === 'string') : [];
+
+    if (!rate || rate < 1 || rate > 5) return sendError(res, 400, 'Invalid rate value');
+
+    // fetch order and verify buyer and status
+    const order = await OrderModel.findById(orderId).exec();
+    if (!order) return sendError(res, 404, 'Order not found');
+    if (String(order.orderBuyerId) !== String(userId)) return sendError(res, 403, 'Not the buyer of this order');
+    if (order.orderStatus !== ORDER_STATUS.DELIVERED) return sendError(res, 400, 'Order not delivered yet');
+
+    // determine seller(s) for this order - we only support one seller per order in current model
+    const sellerIds = Array.isArray(order.orderSellerIds) ? order.orderSellerIds : [];
+    if (!sellerIds.length) return sendError(res, 400, 'No seller associated with this order');
+
+    const sellerId = String(sellerIds[0]);
+
+    // append review to seller userComment and recompute userRate
+    const comment = { by: new Types.ObjectId(userId), rate, description, media, createdAt: new Date() } as any;
+
+    const seller = await User.findById(sellerId).exec();
+    if (!seller) return sendError(res, 404, 'Seller not found');
+
+    seller.userComment = Array.isArray(seller.userComment) ? seller.userComment : [];
+    seller.userComment.push(comment);
+
+    // recompute average
+    const sum = (seller.userComment || []).reduce((acc: number, c: any) => acc + (Number(c.rate) || 0), 0);
+    const avg = (seller.userComment.length && sum > 0) ? sum / seller.userComment.length : 0;
+    seller.userRate = Math.round((avg + Number.EPSILON) * 100) / 100; // round to 2 decimals
+
+    await seller.save();
+
+    return sendSuccess(res, { ok: true });
+  } catch (err: any) {
+    console.error('rateShop error', err);
+    return sendError(res, 500, 'Server error', err?.message);
+  }
+}
