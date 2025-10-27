@@ -17,6 +17,10 @@ routeAdmin(app);
 const routeClient = require("./routes/client/index.route");
 routeClient(app)
 
+// webhook endpoints (public)
+const trackingWebhook = require('./routes/webhook/trackingmore.route').default;
+app.use('/trackingmore', trackingWebhook);
+
 // Auction finalizer: run periodically to finalize ended auctions (deduct winner wallets and create orders)
 try {
   // require here to match project's CommonJS pattern
