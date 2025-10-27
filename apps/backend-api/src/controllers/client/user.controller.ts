@@ -455,3 +455,43 @@ export async function deleteBankByName(req: Request, res: Response) {
     return sendError(res, 500, 'Server error', err?.message);
   }
 }
+
+// POST /api/me/become-seller -> submit seller registration application
+export async function submitSellerApplication(req: Request, res: Response) {
+  try {
+    const user = (req as any).user;
+    if (!user || !user.sub) return sendError(res, 401, 'Unauthorized');
+
+    const body = req.body || {};
+    const { fullName, idNumber, idFrontUrl, idBackUrl, pickupAddress } = body;
+    if (!fullName || !idNumber || !idFrontUrl || !idBackUrl || !pickupAddress) {
+      return sendError(res, 400, 'Missing required fields');
+    }
+
+    // pickupAddress must be an object
+    if (typeof pickupAddress !== 'object' || Array.isArray(pickupAddress) || pickupAddress === null) {
+      return sendError(res, 400, 'pickupAddress must be an object');
+    }
+
+    // Use atomic update to avoid validating unrelated subdocuments (e.g., userWallet.topups)
+    const update = {
+      sellerRegistration: {
+        status: 'pending',
+        fullName: String(fullName),
+        idNumber: String(idNumber),
+        idFrontUrl: String(idFrontUrl),
+        idBackUrl: String(idBackUrl),
+        pickupAddress: pickupAddress,
+        submittedAt: new Date(),
+      },
+      // do not modify userRole here; remain CUSTOMER until admin approves
+    } as any;
+
+    const resUpdate = await User.findByIdAndUpdate(String(user.sub), { $set: update }, { new: true }).select('_id').lean();
+    if (!resUpdate) return sendError(res, 404, 'User not found');
+    return sendSuccess(res, { ok: true });
+  } catch (err: any) {
+    console.error('submitSellerApplication error', err);
+    return sendError(res, 500, 'Server error', err?.message);
+  }
+}
