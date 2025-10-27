@@ -38,7 +38,7 @@ const OrderSchema = new Schema(
     orderSubtotal: { type: Number, required: true },
     orderShippingFee: { type: Number, default: 0 },
     orderTotalAmount: { type: Number, required: true, index: true },
-    orderStatus: { type: String, enum: Object.values(ORDER_STATUS), default: ORDER_STATUS.PENDING, index: true },
+    orderStatus: { type: Number, enum: Object.values(ORDER_STATUS), default: ORDER_STATUS.PENDING, index: true },
     orderPaymentMethod: { type: String, enum: Object.values(PAYMENT_METHOD), required: true },
     orderPaymentStatus: { type: String, enum: Object.values(PAYMENT_STATUS), default: PAYMENT_STATUS.PENDING, index: true },
     orderShippingAddress: { type: ShippingAddressSchema, required: true },
