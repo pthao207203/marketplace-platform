@@ -45,6 +45,22 @@ const OrderSchema = new Schema(
     orderNote: { type: String },
     orderPaymentReference: { type: String },
     orderLocked: { type: Boolean, default: false },
+    // return/ refund request subdocument
+    returnRequest: {
+      type: {
+        status: { type: String, enum: ['pending', 'approved', 'rejected', 'completed'], default: 'pending' },
+  // media: list of video/image URLs provided by buyer as evidence
+  media: { type: [String], default: [] },
+        description: { type: String },
+        createdAt: { type: Date },
+        reviewedAt: { type: Date },
+        reviewerId: { type: Types.ObjectId, ref: 'User' },
+        rejectionReason: { type: String },
+        refundProcessed: { type: Boolean, default: false },
+        refundAmount: { type: Number, default: 0 }
+      },
+      default: undefined
+    },
   },
   { timestamps: true, collection: 'orders' }
 );

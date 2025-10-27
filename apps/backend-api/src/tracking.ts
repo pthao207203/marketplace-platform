@@ -70,14 +70,23 @@ app.post('/simulate', async (req: Request, res: Response) => {
     const reg = registrations[trackingNumber];
     const mainAppUrl = reg?.callbackUrl || process.env.MAIN_APP_URL || null;
     if (mainAppUrl) {
+      const axios = require('axios');
+      const webhookUrl = `${mainAppUrl.replace(/\/$/, '')}/trackingmore`;
       try {
-        const axios = require('axios');
-        await axios.post(`${mainAppUrl.replace(/\/$/, '')}/trackingmore`, {
-          data: { tracking_number: trackingNumber, courier_code: courierCode },
-          event
-        });
+        await axios.post(webhookUrl, { data: { tracking_number: trackingNumber, courier_code: courierCode }, event });
       } catch (err: any) {
         console.error('failed to post webhook to main app', err?.message || err);
+        // If the error is connection refused and the host is localhost, try IPv4 loopback (127.0.0.1)
+        const code = err && (err.code || (err.errors && err.errors[0] && err.errors[0].code));
+        if (code === 'ECONNREFUSED' && webhookUrl.includes('localhost')) {
+          const alt = webhookUrl.replace('localhost', '127.0.0.1');
+          try {
+            console.info('Attempting webhook retry using 127.0.0.1 instead of localhost');
+            await axios.post(alt, { data: { tracking_number: trackingNumber, courier_code: courierCode }, event });
+          } catch (err2: any) {
+            console.error('retry to 127.0.0.1 failed', err2?.message || err2);
+          }
+        }
       }
     }
 
