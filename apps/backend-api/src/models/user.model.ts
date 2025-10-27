@@ -130,6 +130,22 @@ const UserSchema = new Schema(
     userBanks: { type: [BankSchema], default: [] },
     userWallet: { type: WalletSchema, default: {} },
     userRate: { type: Number, default: 0 },
+    // user comments (reviews) left by buyers for this shop/user
+    userComment: {
+      type: [
+        new Schema(
+          {
+            by: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+            rate: { type: Number, required: true, min: 1, max: 5 },
+            description: { type: String },
+            media: { type: [String], default: [] },
+            createdAt: { type: Date, default: Date.now },
+          },
+          { _id: true, timestamps: false }
+        ),
+      ],
+      default: [],
+    },
     userCart: { type: [CartItemSchema], default: [] },
   },
   {
