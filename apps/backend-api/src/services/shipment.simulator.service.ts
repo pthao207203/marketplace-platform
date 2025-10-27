@@ -45,10 +45,6 @@ export function startSimulation(shipmentId: string) {
         s.rawStatus = ev.code;
         await s.save();
 
-        // if delivered, update linked order shipping status
-        if (ev.code === 'DELIVERED' && s.orderId) {
-          await OrderModel.updateOne({ _id: s.orderId }, { $set: { orderStatus: ORDER_STATUS.DELIVERED } });
-        }
       } catch (err) {
         console.error('shipment simulation error', err);
       }

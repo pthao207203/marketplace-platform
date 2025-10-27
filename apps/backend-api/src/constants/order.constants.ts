@@ -1,13 +1,24 @@
 // Constants for order model and related logic
 export const ORDER_STATUS = {
-  PENDING: 'pending', // chờ xác nhận
-  SHIPPING: 'shipping', // đang giao
-  DELIVERED: 'delivered', // đã nhận
-  CANCELLED: 'cancelled', // đã huỷ
-  RETURNED: 'returned', // trả hàng hoàn tiền
+  PENDING: 0, // chờ xác nhận
+  SHIPPING: 1, // đang giao
+  DELIVERED: 2, // đã nhận
+  CANCELLED: 3, // đã huỷ
+  RETURNED: 4, // trả hàng hoàn tiền
 } as const;
 
 export type OrderStatus = typeof ORDER_STATUS[keyof typeof ORDER_STATUS];
+
+// reverse map: number -> name
+export const ORDER_STATUS_NAME = Object.fromEntries(Object.entries(ORDER_STATUS).map(([k, v]) => [v as any, k]));
+
+export function orderStatusNameToValue(name: string | number) {
+  if (typeof name === 'number') return name;
+  return (ORDER_STATUS as any)[String(name)] ?? ORDER_STATUS.PENDING;
+}
+export function orderStatusValueToName(val: number) {
+  return (ORDER_STATUS_NAME as any)[val] ?? 'PENDING';
+}
 
 export const PAYMENT_METHOD = {
   WALLET: 'wallet',

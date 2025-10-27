@@ -4,7 +4,8 @@ import { sendSuccess, sendError } from '../../utils/response';
 import { findProductById } from '../../services/product.service';
 import User from '../../models/user.model';
 import OrderModel from '../../models/order.model';
-import { ORDER_STATUS, PAYMENT_METHOD, PAYMENT_STATUS } from '../../constants/order.constants';
+import ShipmentModel from '../../models/shipment.model';
+import { ORDER_STATUS, PAYMENT_METHOD, PAYMENT_STATUS, SHIPMENT_STATUS } from '../../constants/order.constants';
 
 type PreviewItem = { productId: string; qty?: number };
 
@@ -275,6 +276,40 @@ export async function placeOrder(req: Request, res: Response) {
       return sendError(res, 402, 'Insufficient wallet balance at commit time', { walletBalance: null, required: grandTotal });
     }
 
+    return sendError(res, 500, 'Server error', err?.message);
+  }
+}
+
+// POST /api/orders/:id/confirm-delivery
+export async function confirmDelivery(req: Request, res: Response) {
+  try {
+    const userId = req.user?.sub;
+    if (!userId || !Types.ObjectId.isValid(String(userId))) return sendError(res, 401, 'Unauthorized');
+
+    const orderId = req.params.id;
+    if (!orderId || !Types.ObjectId.isValid(orderId)) return sendError(res, 400, 'Invalid order id');
+
+    const order: any = await OrderModel.findById(orderId);
+    if (!order) return sendError(res, 404, 'Order not found');
+
+    // Only buyer can confirm
+    if (String(order.orderBuyerId) !== String(userId)) return sendError(res, 403, 'Forbidden');
+
+    // find shipment linked to order (if any)
+    const shipment: any = await ShipmentModel.findOne({ orderId: order._id });
+    if (!shipment) return sendError(res, 400, 'No shipment found for this order');
+
+    // ensure shipment is delivered
+    if (shipment.currentStatus !== undefined && shipment.currentStatus !== null && shipment.currentStatus !== SHIPMENT_STATUS.DELIVERED) {
+      return sendError(res, 400, 'Shipment not delivered yet');
+    }
+    
+    // mark order as delivered
+    await OrderModel.updateOne({ _id: order._id }, { $set: { orderStatus: ORDER_STATUS.DELIVERED } });
+
+    return sendSuccess(res, { ok: true });
+  } catch (err: any) {
+    console.error('confirmDelivery error', err);
     return sendError(res, 500, 'Server error', err?.message);
   }
 }
