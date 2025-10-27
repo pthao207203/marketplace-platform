@@ -44,6 +44,7 @@ const OrderSchema = new Schema(
     orderShippingAddress: { type: ShippingAddressSchema, required: true },
     orderNote: { type: String },
     orderPaymentReference: { type: String },
+    orderLocked: { type: Boolean, default: false },
   },
   { timestamps: true, collection: 'orders' }
 );

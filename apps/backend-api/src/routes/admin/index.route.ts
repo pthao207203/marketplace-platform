@@ -6,6 +6,7 @@ import productRoute from './product.route'
 import categoryRoute from './category.route'
 import brandRoute from './brand.route'
 import systemRoute from './system.route'
+import orderRoute from './order.route'
 import { requireClientAuth } from '../../middlewares/auth';
 
 module.exports = (app:Application) => {
@@ -24,6 +25,11 @@ module.exports = (app:Application) => {
     systemConfig.prefixAdmin + `/products`,
     adminMiddlewares,
     productRoute
+  );
+  app.use(
+    systemConfig.prefixAdmin + `/orders`,
+    adminMiddlewares,
+    orderRoute
   );
   app.use(
     systemConfig.prefixAdmin + `/categories`,
