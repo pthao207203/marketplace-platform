@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { previewOrder, placeOrder, rateShop, confirmDelivery, submitReturnRequest } from '../../controllers/client/order.controller';
+import { previewOrder, placeOrder, rateShop, confirmDelivery, listOrders, getOrderDetail, submitReturnRequest } from '../../controllers/client/order.controller';
 import { requireClientAuth } from '../../middlewares/auth';
 
 const router = Router();
@@ -18,6 +18,10 @@ router.post('/:id/rate', requireClientAuth, rateShop);
 
 // Buyer submits a return/refund request with video evidence
 router.post('/:id/return', requireClientAuth, submitReturnRequest);
+
+// List orders (filter by status) and get order detail
+router.get('/', requireClientAuth, listOrders);
+router.get('/:id', requireClientAuth, getOrderDetail);
 
 export default router;
 
