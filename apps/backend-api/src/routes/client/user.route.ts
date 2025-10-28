@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireClientAuth } from "../../middlewares/auth";
 import { addToCart, viewCart } from "../../controllers/client/cart.controller";
-import { getMyProfile, listAddresses, getAddress, createAddress, updateAddress, deleteAddress, getProfileForEdit, patchProfile, patchPassword } from "../../controllers/client/user.controller";
+import { getMyProfile, listAddresses, getAddress, createAddress, updateAddress, deleteAddress, getProfileForEdit, patchProfile, patchPassword, submitSellerApplication } from "../../controllers/client/user.controller";
 import { listBanks, getBank, createBank, deleteBankByName, updateBankByName } from '../../controllers/client/user.controller';
 
 const router = Router();
@@ -29,5 +29,7 @@ router.get('/banks/:id', requireClientAuth, getBank);
 router.post('/banks', requireClientAuth, createBank);
 router.put('/banks/:name', requireClientAuth, updateBankByName);
 router.delete('/banks/:name', requireClientAuth, deleteBankByName);
+
+router.post('/become-seller', requireClientAuth, submitSellerApplication);
 
 export default router;

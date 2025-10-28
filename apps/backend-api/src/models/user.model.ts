@@ -85,6 +85,29 @@ const CreatedSchema = new Schema(
   { _id: false }
 )
 
+const SellerRegistrationSchema = new Schema(
+  {
+    status: { type: String, enum: ['none', 'pending', 'approved', 'rejected'], default: 'none' },
+    fullName: { type: String },
+    idNumber: { type: String },
+    idFrontUrl: { type: String },
+    idBackUrl: { type: String },
+    pickupAddress: {
+      address: { type: String },
+      city: { type: String },
+      province: { type: String },
+      postalCode: { type: String },
+      lat: { type: Number },
+      lng: { type: Number },
+    },
+    submittedAt: { type: Date },
+    reviewedAt: { type: Date },
+    reviewerId: { type: Schema.Types.ObjectId, ref: 'User' },
+    rejectionReason: { type: String },
+  },
+  { _id: false, timestamps: false }
+);
+
 // ===== User Schema =====
 const UserSchema = new Schema(
   {
@@ -146,6 +169,8 @@ const UserSchema = new Schema(
       ],
       default: [],
     },
+  // seller registration (client submits, admin reviews)
+  sellerRegistration: { type: SellerRegistrationSchema, default: { status: 'none' } },
     userCart: { type: [CartItemSchema], default: [] },
   },
   {
