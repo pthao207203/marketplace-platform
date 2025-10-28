@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import User from '../../models/user.model';
+import { UserModel } from '../../models/user.model';
 import { USER_ROLE } from '../../constants/user.constants';
 import { sendError, sendSuccess } from '../../utils/response';
 import { Types } from 'mongoose';
@@ -7,7 +7,7 @@ import { Types } from 'mongoose';
 // GET /admin/sellers/pending
 export async function listSellerApplications(req: Request, res: Response) {
   try {
-    const apps = await User.find({ 'sellerRegistration.status': 'pending' }).select('userName userMail sellerRegistration').lean();
+    const apps = await UserModel.find({ 'sellerRegistration.status': 'pending' }).select('userName userMail sellerRegistration').lean();
     return sendSuccess(res, { items: apps });
   } catch (err: any) {
     console.error('listSellerApplications error', err);
@@ -30,7 +30,7 @@ export async function reviewSellerApplication(req: Request, res: Response) {
     if (!['approve', 'reject'].includes(action)) return sendError(res, 400, 'Invalid action');
 
     // read sellerRegistration status with lean to avoid full mongoose document validation
-    const existing = await User.findById(userId).select('sellerRegistration').lean<any>();
+    const existing = await UserModel.findById(userId).select('sellerRegistration').lean<any>();
     if (!existing) return sendError(res, 404, 'User not found');
     if (!existing.sellerRegistration || existing.sellerRegistration.status !== 'pending') return sendError(res, 400, 'No pending application');
 
@@ -43,7 +43,7 @@ export async function reviewSellerApplication(req: Request, res: Response) {
     // set userRole to SHOP when approved, otherwise set back to CUSTOMER
     update['userRole'] = action === 'approve' ? USER_ROLE.SHOP : USER_ROLE.CUSTOMER;
 
-    const updated = await User.findByIdAndUpdate(userId, { $set: update }, { new: true }).select('_id userRole sellerRegistration').lean();
+    const updated = await UserModel.findByIdAndUpdate(userId, { $set: update }, { new: true }).select('_id userRole sellerRegistration').lean();
     if (!updated) return sendError(res, 500, 'Unable to update user');
     return sendSuccess(res, { ok: true, action });
   } catch (err: any) {
