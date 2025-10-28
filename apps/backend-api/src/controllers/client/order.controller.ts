@@ -1,11 +1,122 @@
-import type { Request, Response } from 'express';
-import { Types, default as mongoose } from 'mongoose';
-import { sendSuccess, sendError } from '../../utils/response';
-import { findProductById } from '../../services/product.service';
-import User from '../../models/user.model';
-import OrderModel from '../../models/order.model';
-import ShipmentModel from '../../models/shipment.model';
-import { ORDER_STATUS, PAYMENT_METHOD, PAYMENT_STATUS, SHIPMENT_STATUS } from '../../constants/order.constants';
+import type { Request, Response } from "express";
+import { Types, default as mongoose } from "mongoose";
+import { sendSuccess, sendError } from "../../utils/response";
+import { findProductById } from "../../services/product.service";
+import User from "../../models/user.model";
+import OrderModel from "../../models/order.model";
+import ShipmentModel from "../../models/shipment.model";
+import {
+  ORDER_STATUS,
+  PAYMENT_METHOD,
+  PAYMENT_STATUS,
+  SHIPMENT_STATUS,
+  orderStatusNameToValue,
+} from "../../constants/order.constants";
+
+// GET /api/orders?status=<name|number>&page=&limit=
+export async function listOrders(req: Request, res: Response) {
+  try {
+    const userId = req.user?.sub;
+    if (!userId || !Types.ObjectId.isValid(String(userId)))
+      return sendError(res, 401, "Unauthorized");
+
+    const q: any = req.query || {};
+    const statusQ = q.status;
+    const page = Math.max(1, Number(q.page || 1));
+    const limit = Math.min(100, Math.max(1, Number(q.limit || 20)));
+
+    const filter: any = { orderBuyerId: new Types.ObjectId(String(userId)) };
+    if (
+      statusQ !== undefined &&
+      statusQ !== null &&
+      String(statusQ).trim() !== ""
+    ) {
+      let val: number = orderStatusNameToValue(statusQ);
+      // If user passed a numeric string, try coercing
+      if (typeof statusQ === "string" && /^[0-9]+$/.test(statusQ))
+        val = Number(statusQ);
+      filter.orderStatus = val;
+    }
+
+    const total = await OrderModel.countDocuments(filter);
+    const orders = await OrderModel.find(filter)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean();
+
+    // attach shipment info in one query
+    const orderIds = orders.map((o: any) => o._id);
+    const shipments = await ShipmentModel.find({
+      orderId: { $in: orderIds },
+    }).lean();
+    const shipMap: Record<string, any> = {};
+    for (const s of shipments) shipMap[String(s.orderId)] = s;
+
+    const out = orders.map((o: any) => ({
+      id: String(o._id),
+      order: o,
+      shipment: shipMap[String(o._id)] || null,
+    }));
+
+    return sendSuccess(res, { page, limit, total, orders: out });
+  } catch (err: any) {
+    console.error("listOrders error", err);
+    return sendError(res, 500, "Server error", err?.message);
+  }
+}
+
+// GET /api/orders/:id -> order detail
+export async function getOrderDetail(req: Request, res: Response) {
+  try {
+    const userId = req.user?.sub;
+    if (!userId || !Types.ObjectId.isValid(String(userId)))
+      return sendError(res, 401, "Unauthorized");
+
+    const orderId = req.params.id;
+    if (!orderId || !Types.ObjectId.isValid(orderId))
+      return sendError(res, 400, "Invalid order id");
+
+    const order: any = await OrderModel.findById(orderId).lean();
+    if (!order) return sendError(res, 404, "Order not found");
+
+    const isBuyer = String(order.orderBuyerId) === String(userId);
+    if (!isBuyer) return sendError(res, 403, "Forbidden");
+
+    const shipment = await ShipmentModel.findOne({ orderId: order._id }).lean();
+
+    // attach basic seller info (first seller) for convenience
+    let sellerBasic: any = null;
+    try {
+      const sellerIds = Array.isArray(order.orderSellerIds)
+        ? order.orderSellerIds
+        : [];
+      if (sellerIds.length) {
+        const s = await User.findById(String(sellerIds[0]))
+          .select("userName userAvatar")
+          .lean();
+        if (s)
+          sellerBasic = {
+            id: String((s as any)._id),
+            userName: (s as any).userName || "",
+            userAvatar: (s as any).userAvatar || "",
+          };
+      }
+    } catch (e) {
+      // non-fatal; continue without seller info
+      console.error("getOrderDetail: failed to fetch seller basic info", e);
+    }
+
+    return sendSuccess(res, {
+      order: { id: String(order._id), ...order },
+      shipment: shipment || null,
+      seller: sellerBasic,
+    });
+  } catch (err: any) {
+    console.error("getOrderDetail error", err);
+    return sendError(res, 500, "Server error", err?.message);
+  }
+}
 
 type PreviewItem = { productId: string; qty?: number };
 
@@ -13,21 +124,28 @@ type PreviewItem = { productId: string; qty?: number };
 export async function previewOrder(req: Request, res: Response) {
   try {
     const userId = req.user?.sub;
-    if (!userId || !Types.ObjectId.isValid(String(userId))) return sendError(res, 401, 'Unauthorized');
+    if (!userId || !Types.ObjectId.isValid(String(userId)))
+      return sendError(res, 401, "Unauthorized");
 
     const body = req.body || {};
     const items: PreviewItem[] = Array.isArray(body.items) ? body.items : [];
-    if (!items.length) return sendError(res, 400, 'Missing items to preview');
+    if (!items.length) return sendError(res, 400, "Missing items to preview");
 
     // Validate productIds and quantities
-    const normalized = items.map((it) => ({ productId: String(it.productId), qty: Math.max(1, Number(it.qty) || 1) }));
+    const normalized = items.map((it) => ({
+      productId: String(it.productId),
+      qty: Math.max(1, Number(it.qty) || 1),
+    }));
 
     // fetch products in parallel
     const proms = normalized.map((it) => findProductById(it.productId));
     const prods = await Promise.all(proms);
 
     // collect product DTOs and compute totals; group by shop
-    const byShop: Record<string, { shopId: string; shopName?: string; items: any[] }> = {};
+    const byShop: Record<
+      string,
+      { shopId: string; shopName?: string; items: any[] }
+    > = {};
     let totalPrice = 0;
 
     for (let i = 0; i < normalized.length; i++) {
@@ -35,21 +153,28 @@ export async function previewOrder(req: Request, res: Response) {
       const p = prods[i];
       if (!p) continue; // skip missing product
 
-      const price = typeof p.productPrice === 'number' ? p.productPrice : 0;
+      const price = typeof p.productPrice === "number" ? p.productPrice : 0;
       const qty = it.qty || 1;
       const lineTotal = price * qty;
       totalPrice += lineTotal;
 
-      const shopId = String(p.productShopId || '');
-      const shopKey = shopId || 'unknown';
-      if (!byShop[shopKey]) byShop[shopKey] = { shopId: shopId || '', shopName: undefined, items: [] };
+      const shopId = String(p.productShopId || "");
+      const shopKey = shopId || "unknown";
+      if (!byShop[shopKey])
+        byShop[shopKey] = {
+          shopId: shopId || "",
+          shopName: undefined,
+          items: [],
+        };
 
       // take first media as thumbnail when available
-      const imageUrl = Array.isArray(p.productMedia) ? (p.productMedia[0] ?? '') : (p.productMedia ?? '');
+      const imageUrl = Array.isArray(p.productMedia)
+        ? p.productMedia[0] ?? ""
+        : p.productMedia ?? "";
       byShop[shopKey].items.push({
         productId: String(p._id),
-        name: p.productName || '',
-        shortDescription: p.productDescription || '',
+        name: p.productName || "",
+        shortDescription: p.productDescription || "",
         imageUrl,
         price,
         qty,
@@ -58,12 +183,19 @@ export async function previewOrder(req: Request, res: Response) {
     }
 
     // fetch shop names for known shopIds (if any)
-    const shopIds = Object.values(byShop).map((s) => s.shopId).filter((id) => id && Types.ObjectId.isValid(String(id)));
+    const shopIds = Object.values(byShop)
+      .map((s) => s.shopId)
+      .filter((id) => id && Types.ObjectId.isValid(String(id)));
     const uniqueShopIds = Array.from(new Set(shopIds));
     if (uniqueShopIds.length) {
-      const shops = await User.find({ _id: { $in: uniqueShopIds.map((s) => new Types.ObjectId(s)) } }).select('userName').lean();
+      const shops = await User.find({
+        _id: { $in: uniqueShopIds.map((s) => new Types.ObjectId(s)) },
+      })
+        .select("userName")
+        .lean();
       const mapName: Record<string, string> = {};
-      for (const s of shops) mapName[String((s as any)._id)] = (s as any).userName || '';
+      for (const s of shops)
+        mapName[String((s as any)._id)] = (s as any).userName || "";
       for (const k of Object.keys(byShop)) {
         const sid = byShop[k].shopId;
         if (sid && mapName[sid]) byShop[k].shopName = mapName[sid];
@@ -71,16 +203,22 @@ export async function previewOrder(req: Request, res: Response) {
     }
 
     // flatten grouped shops into array
-    const shopsList = Object.keys(byShop).map((k) => ({ shopId: byShop[k].shopId, shopName: byShop[k].shopName, items: byShop[k].items }));
+    const shopsList = Object.keys(byShop).map((k) => ({
+      shopId: byShop[k].shopId,
+      shopName: byShop[k].shopName,
+      items: byShop[k].items,
+    }));
 
     // payment methods: wallet and COD
     const paymentMethods = [
-      { code: 'WALLET', label: 'Ví của tôi' },
-      { code: 'COD', label: 'Thanh toán khi nhận hàng' },
+      { code: "WALLET", label: "Ví của tôi" },
+      { code: "COD", label: "Thanh toán khi nhận hàng" },
     ];
 
     // fetch user's addresses
-    const u = await User.findById(String(userId)).select('userAddress userWallet').lean<any>();
+    const u = await User.findById(String(userId))
+      .select("userAddress userWallet")
+      .lean<any>();
     const addresses = Array.isArray(u?.userAddress) ? u.userAddress : [];
     const walletBalance = u?.userWallet?.balance ?? 0;
 
@@ -94,8 +232,8 @@ export async function previewOrder(req: Request, res: Response) {
 
     return sendSuccess(res, resp);
   } catch (err: any) {
-    console.error('previewOrder error', err);
-    return sendError(res, 500, 'Server error', err?.message);
+    console.error("previewOrder error", err);
+    return sendError(res, 500, "Server error", err?.message);
   }
 }
 
@@ -106,46 +244,60 @@ export async function placeOrder(req: Request, res: Response) {
 
   try {
     const userId = req.user?.sub;
-    if (!userId || !Types.ObjectId.isValid(String(userId))) return sendError(res, 401, 'Unauthorized');
+    if (!userId || !Types.ObjectId.isValid(String(userId)))
+      return sendError(res, 401, "Unauthorized");
 
     const body = req.body || {};
-    const items: { productId: string; qty?: number }[] = Array.isArray(body.items) ? body.items : [];
-    const paymentMethod = String(body.paymentMethod || '').toLowerCase();
+    const items: { productId: string; qty?: number }[] = Array.isArray(
+      body.items
+    )
+      ? body.items
+      : [];
+    const paymentMethod = String(body.paymentMethod || "").toLowerCase();
     const shippingAddressId = body.shippingAddressId;
     const shippingAddressObj = body.shippingAddress;
 
-    if (!items.length) return sendError(res, 400, 'Missing items');
-    if (!paymentMethod) return sendError(res, 400, 'Missing paymentMethod');
-    if (!Object.values(PAYMENT_METHOD).includes(paymentMethod as any)) return sendError(res, 400, 'Invalid paymentMethod');
+    if (!items.length) return sendError(res, 400, "Missing items");
+    if (!paymentMethod) return sendError(res, 400, "Missing paymentMethod");
+    if (!Object.values(PAYMENT_METHOD).includes(paymentMethod as any))
+      return sendError(res, 400, "Invalid paymentMethod");
 
     // normalize items
-    const normalized = items.map((it) => ({ productId: String(it.productId), qty: Math.max(1, Number(it.qty) || 1) }));
+    const normalized = items.map((it) => ({
+      productId: String(it.productId),
+      qty: Math.max(1, Number(it.qty) || 1),
+    }));
 
     // fetch products and ensure all exist
     const proms = normalized.map((it) => findProductById(it.productId));
     const prods = await Promise.all(proms);
-    const missing = normalized.filter((_, i) => !prods[i]).map((it) => it.productId);
-    if (missing.length) return sendError(res, 400, 'Some products not found', { missing });
+    const missing = normalized
+      .filter((_, i) => !prods[i])
+      .map((it) => it.productId);
+    if (missing.length)
+      return sendError(res, 400, "Some products not found", { missing });
 
     // group items by shopId so we can create one order per shop
     const groups: Record<string, { items: any[]; subtotal: number }> = {};
     for (let i = 0; i < normalized.length; i++) {
       const it = normalized[i];
       const p: any = prods[i];
-      const price = typeof p.productPrice === 'number' ? p.productPrice : 0;
+      const price = typeof p.productPrice === "number" ? p.productPrice : 0;
       const qty = it.qty || 1;
       const lineTotal = price * qty;
 
-      const imageUrl = Array.isArray(p.productMedia) ? (p.productMedia[0] ?? '') : (p.productMedia ?? '');
-      const shopId = p.productShopId ? String(p.productShopId) : 'unknown';
+      const imageUrl = Array.isArray(p.productMedia)
+        ? p.productMedia[0] ?? ""
+        : p.productMedia ?? "";
+      const shopId = p.productShopId ? String(p.productShopId) : "unknown";
       if (!groups[shopId]) groups[shopId] = { items: [], subtotal: 0 };
       groups[shopId].items.push({
         productId: p._id,
-        name: p.productName || '',
+        name: p.productName || "",
         imageUrl,
         price,
         qty,
-        shopId: shopId === 'unknown' ? null : shopId,
+        shopId: shopId === "unknown" ? null : shopId,
         lineTotal,
       });
       groups[shopId].subtotal += lineTotal;
@@ -154,17 +306,26 @@ export async function placeOrder(req: Request, res: Response) {
     // resolve shipping address: either from user's saved addresses or from provided object
     let shippingAddress: any = null;
     if (shippingAddressId) {
-      const u = await User.findById(String(userId)).select('userAddress').lean<any>();
-      shippingAddress = (u?.userAddress || []).find((a: any) => String(a._id) === String(shippingAddressId)) || null;
-      if (!shippingAddress) return sendError(res, 400, 'Shipping address not found');
-    } else if (shippingAddressObj && typeof shippingAddressObj === 'object') {
+      const u = await User.findById(String(userId))
+        .select("userAddress")
+        .lean<any>();
+      shippingAddress =
+        (u?.userAddress || []).find(
+          (a: any) => String(a._id) === String(shippingAddressId)
+        ) || null;
+      if (!shippingAddress)
+        return sendError(res, 400, "Shipping address not found");
+    } else if (shippingAddressObj && typeof shippingAddressObj === "object") {
       shippingAddress = shippingAddressObj;
     } else {
-      return sendError(res, 400, 'Missing shipping address');
+      return sendError(res, 400, "Missing shipping address");
     }
 
     // shipping fees: allow per-shop shippingFees map or a single total shippingFee
-    const shippingFeesMap = body.shippingFees && typeof body.shippingFees === 'object' ? body.shippingFees : null;
+    const shippingFeesMap =
+      body.shippingFees && typeof body.shippingFees === "object"
+        ? body.shippingFees
+        : null;
     const totalShippingFee = Number(body.shippingFee || 0) || 0;
 
     const shopKeys = Object.keys(groups);
@@ -173,13 +334,15 @@ export async function placeOrder(req: Request, res: Response) {
     // distribute shipping fee if no per-shop fees provided
     const computedShippingFees: Record<string, number> = {};
     if (shippingFeesMap) {
-      for (const k of shopKeys) computedShippingFees[k] = Number(shippingFeesMap[k] || 0) || 0;
+      for (const k of shopKeys)
+        computedShippingFees[k] = Number(shippingFeesMap[k] || 0) || 0;
     } else if (totalShippingFee > 0) {
       const base = Math.floor(totalShippingFee / groupCount);
       let remainder = totalShippingFee - base * groupCount;
       for (let i = 0; i < shopKeys.length; i++) {
         const k = shopKeys[i];
-        computedShippingFees[k] = base + (i === shopKeys.length - 1 ? remainder : 0);
+        computedShippingFees[k] =
+          base + (i === shopKeys.length - 1 ? remainder : 0);
       }
     } else {
       for (const k of shopKeys) computedShippingFees[k] = 0;
@@ -194,11 +357,16 @@ export async function placeOrder(req: Request, res: Response) {
     // if paymentMethod is wallet, check user's wallet balance
     let walletBalance = 0;
     if (paymentMethod === PAYMENT_METHOD.WALLET) {
-      const ubal = await User.findById(String(userId)).select('userWallet').lean<any>();
-      console.log('ubal', ubal);
+      const ubal = await User.findById(String(userId))
+        .select("userWallet")
+        .lean<any>();
+      console.log("ubal", ubal);
       walletBalance = ubal?.userWallet?.balance ?? 0;
       if (walletBalance < grandTotal) {
-        return sendError(res, 402, 'Insufficient wallet balance', { walletBalance, required: grandTotal });
+        return sendError(res, 402, "Insufficient wallet balance", {
+          walletBalance,
+          required: grandTotal,
+        });
       }
     }
 
@@ -206,14 +374,15 @@ export async function placeOrder(req: Request, res: Response) {
     const orderDocs: any[] = [];
     for (const k of shopKeys) {
       const group = groups[k];
-      const shopId = k === 'unknown' ? null : k;
+      const shopId = k === "unknown" ? null : k;
       const orderObj: any = {
         orderBuyerId: userId,
         orderSellerIds: shopId ? [new Types.ObjectId(shopId)] : [],
         orderItems: group.items,
         orderSubtotal: group.subtotal,
         orderShippingFee: computedShippingFees[k] || 0,
-        orderTotalAmount: (group.subtotal || 0) + (computedShippingFees[k] || 0),
+        orderTotalAmount:
+          (group.subtotal || 0) + (computedShippingFees[k] || 0),
         orderStatus: ORDER_STATUS.PENDING,
         orderPaymentMethod: paymentMethod,
         orderPaymentStatus: PAYMENT_STATUS.PENDING,
@@ -237,27 +406,27 @@ export async function placeOrder(req: Request, res: Response) {
           const txId = body.paymentReference || `WALLET-TX-${Date.now()}`;
           const deductionRecord: any = {
             amount: -grandTotal,
-            currency: 'VND',
+            currency: "VND",
             bank: undefined,
             transactionId: txId,
-            status: 'completed',
+            status: "completed",
             createdAt: new Date(),
           };
 
           // conditional update: only deduct if current balance >= grandTotal
           const res = await User.updateOne(
-            { _id: userId, 'userWallet.balance': { $gte: grandTotal } },
+            { _id: userId, "userWallet.balance": { $gte: grandTotal } },
             {
-              $inc: { 'userWallet.balance': -grandTotal },
-              $push: { 'userWallet.topups': deductionRecord },
-              $set: { 'userWallet.updatedAt': new Date() },
+              $inc: { "userWallet.balance": -grandTotal },
+              $push: { "userWallet.topups": deductionRecord },
+              $set: { "userWallet.updatedAt": new Date() },
             },
             { session }
           ).exec();
 
           if (!res.matchedCount && !res.modifiedCount) {
             // balance is insufficient at commit time (race) -> abort
-            throw new Error('Insufficient wallet balance at commit time');
+            throw new Error("Insufficient wallet balance at commit time");
           }
         }
       });
@@ -265,18 +434,29 @@ export async function placeOrder(req: Request, res: Response) {
       session.endSession();
     }
 
-    return sendSuccess(res, { orders: inserted.map((d: any) => ({ id: String(d._id), order: d })) }, 201);
+    return sendSuccess(
+      res,
+      { orders: inserted.map((d: any) => ({ id: String(d._id), order: d })) },
+      201
+    );
   } catch (err: any) {
-    console.error('placeOrder error', err);
+    console.error("placeOrder error", err);
     // If we threw a known insufficient wallet balance error during the transaction,
     // surface it as HTTP 402 (Payment Required) with a helpful payload instead of a 500.
-    if (err && typeof err.message === 'string' && err.message.includes('Insufficient wallet balance')) {
+    if (
+      err &&
+      typeof err.message === "string" &&
+      err.message.includes("Insufficient wallet balance")
+    ) {
       // We don't have the exact balance at commit time (race), but we can return the required amount (grandTotal)
       // so the client knows how much is needed.
-      return sendError(res, 402, 'Insufficient wallet balance at commit time', { walletBalance: null, required: grandTotal });
+      return sendError(res, 402, "Insufficient wallet balance at commit time", {
+        walletBalance: null,
+        required: grandTotal,
+      });
     }
 
-    return sendError(res, 500, 'Server error', err?.message);
+    return sendError(res, 500, "Server error", err?.message);
   }
 }
 
@@ -284,33 +464,44 @@ export async function placeOrder(req: Request, res: Response) {
 export async function confirmDelivery(req: Request, res: Response) {
   try {
     const userId = req.user?.sub;
-    if (!userId || !Types.ObjectId.isValid(String(userId))) return sendError(res, 401, 'Unauthorized');
+    if (!userId || !Types.ObjectId.isValid(String(userId)))
+      return sendError(res, 401, "Unauthorized");
 
     const orderId = req.params.id;
-    if (!orderId || !Types.ObjectId.isValid(orderId)) return sendError(res, 400, 'Invalid order id');
+    if (!orderId || !Types.ObjectId.isValid(orderId))
+      return sendError(res, 400, "Invalid order id");
 
     const order: any = await OrderModel.findById(orderId);
-    if (!order) return sendError(res, 404, 'Order not found');
+    if (!order) return sendError(res, 404, "Order not found");
 
     // Only buyer can confirm
-    if (String(order.orderBuyerId) !== String(userId)) return sendError(res, 403, 'Forbidden');
+    if (String(order.orderBuyerId) !== String(userId))
+      return sendError(res, 403, "Forbidden");
 
     // find shipment linked to order (if any)
     const shipment: any = await ShipmentModel.findOne({ orderId: order._id });
-    if (!shipment) return sendError(res, 400, 'No shipment found for this order');
+    if (!shipment)
+      return sendError(res, 400, "No shipment found for this order");
 
     // ensure shipment is delivered
-    if (shipment.currentStatus !== undefined && shipment.currentStatus !== null && shipment.currentStatus !== SHIPMENT_STATUS.DELIVERED) {
-      return sendError(res, 400, 'Shipment not delivered yet');
+    if (
+      shipment.currentStatus !== undefined &&
+      shipment.currentStatus !== null &&
+      shipment.currentStatus !== SHIPMENT_STATUS.DELIVERED
+    ) {
+      return sendError(res, 400, "Shipment not delivered yet");
     }
-    
+
     // mark order as delivered
-    await OrderModel.updateOne({ _id: order._id }, { $set: { orderStatus: ORDER_STATUS.DELIVERED } });
+    await OrderModel.updateOne(
+      { _id: order._id },
+      { $set: { orderStatus: ORDER_STATUS.DELIVERED } }
+    );
 
     return sendSuccess(res, { ok: true });
   } catch (err: any) {
-    console.error('confirmDelivery error', err);
-    return sendError(res, 500, 'Server error', err?.message);
+    console.error("confirmDelivery error", err);
+    return sendError(res, 500, "Server error", err?.message);
   }
 }
 
@@ -318,27 +509,34 @@ export async function confirmDelivery(req: Request, res: Response) {
 export async function submitReturnRequest(req: Request, res: Response) {
   try {
     const userId = req.user?.sub;
-    if (!userId || !Types.ObjectId.isValid(String(userId))) return sendError(res, 401, 'Unauthorized');
+    if (!userId || !Types.ObjectId.isValid(String(userId)))
+      return sendError(res, 401, "Unauthorized");
 
     const orderId = req.params.id;
-    if (!orderId || !Types.ObjectId.isValid(orderId)) return sendError(res, 400, 'Invalid order id');
+    if (!orderId || !Types.ObjectId.isValid(orderId))
+      return sendError(res, 400, "Invalid order id");
 
-  const body = req.body || {};
-  const media = Array.isArray(body.media) ? body.media.filter((m: any) => typeof m === 'string' && String(m).trim()) : [];
-  const description = String(body.description || '').trim();
+    const body = req.body || {};
+    const media = Array.isArray(body.media)
+      ? body.media.filter((m: any) => typeof m === "string" && String(m).trim())
+      : [];
+    const description = String(body.description || "").trim();
 
-  if (!media.length) return sendError(res, 400, 'Missing media evidence (video/img)');
-  if (!description) return sendError(res, 400, 'Missing description');
+    if (!media.length)
+      return sendError(res, 400, "Missing media evidence (video/img)");
+    if (!description) return sendError(res, 400, "Missing description");
 
     const order: any = await OrderModel.findById(orderId).lean();
-    if (!order) return sendError(res, 404, 'Order not found');
-    if (String(order.orderBuyerId) !== String(userId)) return sendError(res, 403, 'Not the buyer of this order');
+    if (!order) return sendError(res, 404, "Order not found");
+    if (String(order.orderBuyerId) !== String(userId))
+      return sendError(res, 403, "Not the buyer of this order");
 
     // Only orders that were delivered can be returned
-    if (order.orderStatus !== ORDER_STATUS.DELIVERED) return sendError(res, 400, 'Order not eligible for return');
+    if (order.orderStatus !== ORDER_STATUS.DELIVERED)
+      return sendError(res, 400, "Order not eligible for return");
 
     const reqDoc: any = {
-      status: 'pending',
+      status: "pending",
       media,
       description,
       createdAt: new Date(),
@@ -346,12 +544,15 @@ export async function submitReturnRequest(req: Request, res: Response) {
       refundAmount: 0,
     };
 
-    await OrderModel.updateOne({ _id: orderId }, { $set: { returnRequest: reqDoc } });
+    await OrderModel.updateOne(
+      { _id: orderId },
+      { $set: { returnRequest: reqDoc } }
+    );
 
     return sendSuccess(res, { ok: true, returnRequest: reqDoc }, 201);
   } catch (err: any) {
-    console.error('submitReturnRequest error', err);
-    return sendError(res, 500, 'Server error', err?.message);
+    console.error("submitReturnRequest error", err);
+    return sendError(res, 500, "Server error", err?.message);
   }
 }
 
@@ -359,49 +560,73 @@ export async function submitReturnRequest(req: Request, res: Response) {
 export async function rateShop(req: Request, res: Response) {
   try {
     const userId = req.user?.sub;
-    if (!userId || !Types.ObjectId.isValid(String(userId))) return sendError(res, 401, 'Unauthorized');
+    if (!userId || !Types.ObjectId.isValid(String(userId)))
+      return sendError(res, 401, "Unauthorized");
 
     const orderId = req.params.id;
-    if (!orderId || !Types.ObjectId.isValid(String(orderId))) return sendError(res, 400, 'Invalid order id');
+    if (!orderId || !Types.ObjectId.isValid(String(orderId)))
+      return sendError(res, 400, "Invalid order id");
 
     const body = req.body || {};
     const rate = Number(body.rate || 0);
-    const description = String(body.description || '').trim();
-    const media = Array.isArray(body.media) ? body.media.filter((m: any) => typeof m === 'string') : [];
+    const description = String(body.description || "").trim();
+    const media = Array.isArray(body.media)
+      ? body.media.filter((m: any) => typeof m === "string")
+      : [];
 
-    if (!rate || rate < 1 || rate > 5) return sendError(res, 400, 'Invalid rate value');
+    if (!rate || rate < 1 || rate > 5)
+      return sendError(res, 400, "Invalid rate value");
 
     // fetch order and verify buyer and status
     const order = await OrderModel.findById(orderId).exec();
-    if (!order) return sendError(res, 404, 'Order not found');
-    if (String(order.orderBuyerId) !== String(userId)) return sendError(res, 403, 'Not the buyer of this order');
-    if (order.orderStatus !== ORDER_STATUS.DELIVERED) return sendError(res, 400, 'Order not delivered yet');
+    if (!order) return sendError(res, 404, "Order not found");
+    if (String(order.orderBuyerId) !== String(userId))
+      return sendError(res, 403, "Not the buyer of this order");
+    if (order.orderStatus !== ORDER_STATUS.DELIVERED)
+      return sendError(res, 400, "Order not delivered yet");
 
     // determine seller(s) for this order - we only support one seller per order in current model
-    const sellerIds = Array.isArray(order.orderSellerIds) ? order.orderSellerIds : [];
-    if (!sellerIds.length) return sendError(res, 400, 'No seller associated with this order');
+    const sellerIds = Array.isArray(order.orderSellerIds)
+      ? order.orderSellerIds
+      : [];
+    if (!sellerIds.length)
+      return sendError(res, 400, "No seller associated with this order");
 
     const sellerId = String(sellerIds[0]);
 
     // append review to seller userComment and recompute userRate
-    const comment = { by: new Types.ObjectId(userId), rate, description, media, createdAt: new Date() } as any;
+    const comment = {
+      by: new Types.ObjectId(userId),
+      rate,
+      description,
+      media,
+      createdAt: new Date(),
+    } as any;
 
     const seller = await User.findById(sellerId).exec();
-    if (!seller) return sendError(res, 404, 'Seller not found');
+    if (!seller) return sendError(res, 404, "Seller not found");
 
-    seller.userComment = Array.isArray(seller.userComment) ? seller.userComment : [];
+    seller.userComment = Array.isArray(seller.userComment)
+      ? seller.userComment
+      : [];
     seller.userComment.push(comment);
 
     // recompute average
-    const sum = (seller.userComment || []).reduce((acc: number, c: any) => acc + (Number(c.rate) || 0), 0);
-    const avg = (seller.userComment.length && sum > 0) ? sum / seller.userComment.length : 0;
+    const sum = (seller.userComment || []).reduce(
+      (acc: number, c: any) => acc + (Number(c.rate) || 0),
+      0
+    );
+    const avg =
+      seller.userComment.length && sum > 0
+        ? sum / seller.userComment.length
+        : 0;
     seller.userRate = Math.round((avg + Number.EPSILON) * 100) / 100; // round to 2 decimals
 
     await seller.save();
 
     return sendSuccess(res, { ok: true });
   } catch (err: any) {
-    console.error('rateShop error', err);
-    return sendError(res, 500, 'Server error', err?.message);
+    console.error("rateShop error", err);
+    return sendError(res, 500, "Server error", err?.message);
   }
 }
