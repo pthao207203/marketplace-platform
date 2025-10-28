@@ -43,6 +43,13 @@ router.post('/', async (req: Request, res: Response) => {
       }
 
       await s.save();
+      try {
+        const trackingDataForUpsert = { status: event.status, checkpoints: [event], tracking_number: trackingNumber, courier_code: courierCode };
+        // console.info('trackingmore webhook: calling upsertFromProvider for shipment', String(s._id));
+        await upsertFromProvider(String(s._id), trackingDataForUpsert);
+      } catch (e: any) {
+        console.error('upsertFromProvider failed in webhook path', e?.message || e);
+      }
       return res.json({ ok: true });
     }
 

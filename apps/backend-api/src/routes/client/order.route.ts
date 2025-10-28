@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { previewOrder, placeOrder, rateShop, confirmDelivery } from '../../controllers/client/order.controller';
+import { previewOrder, placeOrder, rateShop, confirmDelivery, submitReturnRequest } from '../../controllers/client/order.controller';
 import { requireClientAuth } from '../../middlewares/auth';
 
 const router = Router();
@@ -15,6 +15,9 @@ router.post('/:id/confirm-delivery', requireClientAuth, confirmDelivery);
 
 // Buyer rates shop after confirming delivery
 router.post('/:id/rate', requireClientAuth, rateShop);
+
+// Buyer submits a return/refund request with video evidence
+router.post('/:id/return', requireClientAuth, submitReturnRequest);
 
 export default router;
 

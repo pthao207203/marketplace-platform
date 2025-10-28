@@ -7,6 +7,7 @@ import { Types } from 'mongoose';
 import axios from 'axios';
 import { upsertFromProvider } from '../../utils/shipment-service';
 import { ORDER_STATUS } from '../../constants/order.constants';
+import { SHIPMENT_STATUS } from '../../constants/order.constants';
 
 export async function confirmOrderHandler(req: Request, res: Response) {
   try {
@@ -84,6 +85,49 @@ export async function confirmOrderHandler(req: Request, res: Response) {
     return sendSuccess(res, { shipment, orderId }, 201);
   } catch (err: any) {
     console.error('confirmOrder error', err);
+    return sendError(res, 500, 'Server error', err?.message);
+  }
+}
+
+// GET /admin/orders/returns/pending -> list orders with pending returnRequest
+export async function listReturnRequests(req: Request, res: Response) {
+  try {
+    const docs = await OrderModel.find({ 'returnRequest.status': 'pending' }).lean().limit(200);
+    return sendSuccess(res, { requests: docs });
+  } catch (err: any) {
+    console.error('listReturnRequests error', err);
+    return sendError(res, 500, 'Server error', err?.message);
+  }
+}
+
+// POST /admin/orders/:id/return/review -> { action: 'approve'|'reject', rejectionReason?: string }
+export async function reviewReturnRequest(req: Request, res: Response) {
+  try {
+    const user = (req as any).user;
+    if (!user || !user.sub) return sendError(res, 401, 'Unauthorized');
+
+    const orderId = req.params.id;
+    if (!orderId || !Types.ObjectId.isValid(orderId)) return sendError(res, 400, 'Invalid order id');
+
+    const body = req.body || {};
+    const action = String(body.action || '').toLowerCase();
+    if (!['approve', 'reject'].includes(action)) return sendError(res, 400, 'Invalid action');
+
+    const order: any = await OrderModel.findById(orderId).lean();
+    if (!order) return sendError(res, 404, 'Order not found');
+    if (!order.returnRequest) return sendError(res, 400, 'No return request found');
+    if (order.returnRequest.status !== 'pending') return sendError(res, 400, 'Return request not pending');
+
+    if (action === 'approve') {
+      await OrderModel.updateOne({ _id: orderId }, { $set: { 'returnRequest.status': 'approved', 'returnRequest.reviewedAt': new Date(), 'returnRequest.reviewerId': user.sub } });
+      return sendSuccess(res, { ok: true });
+    } else {
+      const reason = String(body.rejectionReason || '').trim();
+      await OrderModel.updateOne({ _id: orderId }, { $set: { 'returnRequest.status': 'rejected', 'returnRequest.reviewedAt': new Date(), 'returnRequest.reviewerId': user.sub, 'returnRequest.rejectionReason': reason } });
+      return sendSuccess(res, { ok: true });
+    }
+  } catch (err: any) {
+    console.error('reviewReturnRequest error', err);
     return sendError(res, 500, 'Server error', err?.message);
   }
 }

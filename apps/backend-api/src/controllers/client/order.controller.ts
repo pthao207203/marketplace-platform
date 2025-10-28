@@ -314,6 +314,47 @@ export async function confirmDelivery(req: Request, res: Response) {
   }
 }
 
+// POST /api/orders/:id/return -> buyer creates a return/refund request with video evidence and description
+export async function submitReturnRequest(req: Request, res: Response) {
+  try {
+    const userId = req.user?.sub;
+    if (!userId || !Types.ObjectId.isValid(String(userId))) return sendError(res, 401, 'Unauthorized');
+
+    const orderId = req.params.id;
+    if (!orderId || !Types.ObjectId.isValid(orderId)) return sendError(res, 400, 'Invalid order id');
+
+  const body = req.body || {};
+  const media = Array.isArray(body.media) ? body.media.filter((m: any) => typeof m === 'string' && String(m).trim()) : [];
+  const description = String(body.description || '').trim();
+
+  if (!media.length) return sendError(res, 400, 'Missing media evidence (video/img)');
+  if (!description) return sendError(res, 400, 'Missing description');
+
+    const order: any = await OrderModel.findById(orderId).lean();
+    if (!order) return sendError(res, 404, 'Order not found');
+    if (String(order.orderBuyerId) !== String(userId)) return sendError(res, 403, 'Not the buyer of this order');
+
+    // Only orders that were delivered can be returned
+    if (order.orderStatus !== ORDER_STATUS.DELIVERED) return sendError(res, 400, 'Order not eligible for return');
+
+    const reqDoc: any = {
+      status: 'pending',
+      media,
+      description,
+      createdAt: new Date(),
+      refundProcessed: false,
+      refundAmount: 0,
+    };
+
+    await OrderModel.updateOne({ _id: orderId }, { $set: { returnRequest: reqDoc } });
+
+    return sendSuccess(res, { ok: true, returnRequest: reqDoc }, 201);
+  } catch (err: any) {
+    console.error('submitReturnRequest error', err);
+    return sendError(res, 500, 'Server error', err?.message);
+  }
+}
+
 // POST /api/orders/:id/rate -> buyer rates the shop after delivery
 export async function rateShop(req: Request, res: Response) {
   try {
