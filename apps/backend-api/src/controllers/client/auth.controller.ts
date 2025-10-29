@@ -1,12 +1,10 @@
 // src/controllers/auth.controller.ts
 import type { Request, Response } from 'express';
-import User, { type UserDoc } from '../../models/user.model';
-import PendingSignup from '../../models/pendingregister.model';
+import { UserModel, type UserDoc } from '../../models/user.model';
 import { hashPassword, verifyPassword } from '../../utils/password';        // scrypt/bcrypt tuỳ bạn
 import { signAccessToken } from '../../utils/jwt';
 import { USER_STATUS, USER_DELETED, USER_ROLE } from '../../constants/user.constants';
 import {
-  roleIsShopOrAdmin,
   toRoleLabel,
   toStatusLabel,
   toDeletedLabel,
@@ -68,7 +66,7 @@ export async function loginClient(req: Request, res: Response) {
     if (userName) query.userName = userName.trim();
     if (userPhone) query.userPhone = userPhone;
 
-    const user = await User.findOne(query)
+    const user = await UserModel.findOne(query)
       .select('_id userPassword userStatus userDeleted userRole userName userMail')
       .lean<LoginUserLean>();
 
@@ -153,7 +151,7 @@ export async function precheckPhone(req: Request, res: Response) {
     if (!phone) return fail(res, 400, 'MISSING_PHONE', 'Thiếu số điện thoại.');
 
     // (tuỳ chọn) Chuẩn hoá phone sang E.164 ở đây
-    const existed = await User.findOne({ userPhone: phone, userDeleted: USER_DELETED.NO })
+    const existed = await UserModel.findOne({ userPhone: phone, userDeleted: USER_DELETED.NO })
       .select('_id').lean();
     if (existed) {
       return fail(res, 409, 'PHONE_ALREADY_USED', 'Số điện thoại đã được sử dụng.');
@@ -224,7 +222,7 @@ export async function register(req: Request, res: Response) {
     }
 
     // 4) Double-check: phone chưa dùng
-    const existed = await User.findOne({ userPhone: pre.phone, userDeleted: USER_DELETED.NO })
+    const existed = await UserModel.findOne({ userPhone: pre.phone, userDeleted: USER_DELETED.NO })
       .select('_id').lean();
     if (existed) {
       return fail(res, 409, 'PHONE_ALREADY_USED', 'Số điện thoại đã được sử dụng.');
@@ -232,7 +230,7 @@ export async function register(req: Request, res: Response) {
 
     // 5) Tạo user
     const passHash = await hashPassword(password);
-    const user = await User.create({
+    const user = await UserModel.create({
       userName: name,
       userPassword: passHash,
       userMail: `${pre.phone}@placeholder.local`, // hoặc nới lỏng schema nếu không cần email

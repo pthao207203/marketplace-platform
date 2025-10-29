@@ -1,7 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { ENV } from "../config/env";
-import User from "../models/user.model";
 import { USER_ROLE, USER_ROLE_CODE } from "../constants/user.constants";
 
 function resolveRoleCode(role: any): number {
@@ -41,12 +40,10 @@ export function requireClientAuth(
     req.user = { ...payload, token };
     return next();
   } catch (err: any) {
-    return res
-      .status(401)
-      .json({
-        success: false,
-        error: { message: "Invalid token", details: err?.message },
-      });
+    return res.status(401).json({
+      success: false,
+      error: { message: "Invalid token", details: err?.message },
+    });
   }
 }
 
@@ -70,31 +67,25 @@ export function requireAdminAuth(
     const payload = jwt.verify(token, ENV.JWT_ACCESS_SECRET) as any;
     // role check - ADMIN only (accept numeric or string role values)
     if (!payload || typeof payload.role === "undefined") {
-      return res
-        .status(403)
-        .json({
-          success: false,
-          error: { message: "Admin privileges required" },
-        });
+      return res.status(403).json({
+        success: false,
+        error: { message: "Admin privileges required" },
+      });
     }
     const roleCode = resolveRoleCode(payload.role);
     if (Number.isNaN(roleCode) || roleCode !== USER_ROLE.ADMIN) {
-      return res
-        .status(403)
-        .json({
-          success: false,
-          error: { message: "Admin privileges required" },
-        });
+      return res.status(403).json({
+        success: false,
+        error: { message: "Admin privileges required" },
+      });
     }
     req.user = { ...payload, token };
     return next();
   } catch (err: any) {
-    return res
-      .status(401)
-      .json({
-        success: false,
-        error: { message: "Invalid token", details: err?.message },
-      });
+    return res.status(401).json({
+      success: false,
+      error: { message: "Invalid token", details: err?.message },
+    });
   }
 }
 
@@ -118,44 +109,36 @@ export function requireShopOrAdminAuth(
     const payload = jwt.verify(token, ENV.JWT_ACCESS_SECRET) as any;
     // allow SHOP or ADMIN (accept numeric or string role values)
     if (!payload) {
-      return res
-        .status(403)
-        .json({
-          success: false,
-          error: { message: "Insufficient privileges" },
-        });
+      return res.status(403).json({
+        success: false,
+        error: { message: "Insufficient privileges" },
+      });
     }
     // support tokens that put role in either `userRole` or `role` claim
     const rawRole =
       typeof payload.userRole !== "undefined" ? payload.userRole : payload.role;
     if (typeof rawRole === "undefined") {
-      return res
-        .status(403)
-        .json({
-          success: false,
-          error: { message: "Insufficient privileges" },
-        });
+      return res.status(403).json({
+        success: false,
+        error: { message: "Insufficient privileges" },
+      });
     }
     const roleCode2 = resolveRoleCode(rawRole);
     if (
       Number.isNaN(roleCode2) ||
       (roleCode2 !== USER_ROLE.SHOP && roleCode2 !== USER_ROLE.ADMIN)
     ) {
-      return res
-        .status(403)
-        .json({
-          success: false,
-          error: { message: "SHOP or ADMIN privileges required" },
-        });
+      return res.status(403).json({
+        success: false,
+        error: { message: "SHOP or ADMIN privileges required" },
+      });
     }
     req.user = { ...payload, token };
     return next();
   } catch (err: any) {
-    return res
-      .status(401)
-      .json({
-        success: false,
-        error: { message: "Invalid token", details: err?.message },
-      });
+    return res.status(401).json({
+      success: false,
+      error: { message: "Invalid token", details: err?.message },
+    });
   }
 }

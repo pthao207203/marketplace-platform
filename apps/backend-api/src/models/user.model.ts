@@ -194,8 +194,5 @@ const UserSchema = new Schema(
 // Tìm kiếm nhanh theo name/mail
 UserSchema.index({ userName: "text", userMail: "text" });
 
-export type UserDoc = InferSchemaType<typeof UserSchema> & {
-  _id: Types.ObjectId;
-};
-export const User = models.User || model("User", UserSchema);
-export default User;
+export type UserDoc = InferSchemaType<typeof UserSchema> & { _id: Types.ObjectId }
+export const UserModel = models.User || model('User', UserSchema)
