@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { Types, default as mongoose } from "mongoose";
 import { sendSuccess, sendError } from "../../utils/response";
 import { findProductById } from "../../services/product.service";
-import User from "../../models/user.model";
+import { UserModel } from "../../models/user.model";
 import OrderModel from "../../models/order.model";
 import ShipmentModel from "../../models/shipment.model";
 import {
@@ -92,7 +92,7 @@ export async function getOrderDetail(req: Request, res: Response) {
         ? order.orderSellerIds
         : [];
       if (sellerIds.length) {
-        const s = await User.findById(String(sellerIds[0]))
+        const s = await UserModel.findById(String(sellerIds[0]))
           .select("userName userAvatar")
           .lean();
         if (s)
@@ -188,7 +188,7 @@ export async function previewOrder(req: Request, res: Response) {
       .filter((id) => id && Types.ObjectId.isValid(String(id)));
     const uniqueShopIds = Array.from(new Set(shopIds));
     if (uniqueShopIds.length) {
-      const shops = await User.find({
+      const shops = await UserModel.find({
         _id: { $in: uniqueShopIds.map((s) => new Types.ObjectId(s)) },
       })
         .select("userName")
@@ -216,7 +216,7 @@ export async function previewOrder(req: Request, res: Response) {
     ];
 
     // fetch user's addresses
-    const u = await User.findById(String(userId))
+    const u = await UserModel.findById(String(userId))
       .select("userAddress userWallet")
       .lean<any>();
     const addresses = Array.isArray(u?.userAddress) ? u.userAddress : [];
@@ -306,7 +306,7 @@ export async function placeOrder(req: Request, res: Response) {
     // resolve shipping address: either from user's saved addresses or from provided object
     let shippingAddress: any = null;
     if (shippingAddressId) {
-      const u = await User.findById(String(userId))
+      const u = await UserModel.findById(String(userId))
         .select("userAddress")
         .lean<any>();
       shippingAddress =
@@ -357,7 +357,7 @@ export async function placeOrder(req: Request, res: Response) {
     // if paymentMethod is wallet, check user's wallet balance
     let walletBalance = 0;
     if (paymentMethod === PAYMENT_METHOD.WALLET) {
-      const ubal = await User.findById(String(userId))
+      const ubal = await UserModel.findById(String(userId))
         .select("userWallet")
         .lean<any>();
       console.log("ubal", ubal);
@@ -414,7 +414,7 @@ export async function placeOrder(req: Request, res: Response) {
           };
 
           // conditional update: only deduct if current balance >= grandTotal
-          const res = await User.updateOne(
+          const res = await UserModel.updateOne(
             { _id: userId, "userWallet.balance": { $gte: grandTotal } },
             {
               $inc: { "userWallet.balance": -grandTotal },
@@ -603,7 +603,7 @@ export async function rateShop(req: Request, res: Response) {
       createdAt: new Date(),
     } as any;
 
-    const seller = await User.findById(sellerId).exec();
+    const seller = await UserModel.findById(sellerId).exec();
     if (!seller) return sendError(res, 404, "Seller not found");
 
     seller.userComment = Array.isArray(seller.userComment)

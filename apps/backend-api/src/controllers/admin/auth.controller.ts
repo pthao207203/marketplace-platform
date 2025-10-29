@@ -1,6 +1,6 @@
 // src/controllers/auth.controller.ts
 import type { Request, Response } from 'express';
-import User, { type UserDoc } from '../../models/user.model';
+import { UserModel, type UserDoc } from '../../models/user.model';
 import { verifyPassword } from '../../utils/password';        // scrypt/bcrypt tuỳ bạn
 import { signAccessToken } from '../../utils/jwt';
 import { USER_STATUS, USER_DELETED } from '../../constants/user.constants';
@@ -37,7 +37,7 @@ export async function loginShopAdmin(req: Request, res: Response) {
     if (userMail) query.userMail = userMail.toLowerCase().trim();
     if (userName) query.userName = userName.trim();
 
-    const user = await User.findOne(query)
+    const user = await UserModel.findOne(query)
       .select('_id userPassword userStatus userDeleted userRole userName userMail')
       .lean<LoginUserLean>();
 

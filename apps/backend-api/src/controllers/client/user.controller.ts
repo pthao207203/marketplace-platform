@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import User from '../../models/user.model';
+import { UserModel } from '../../models/user.model';
 import { sendSuccess, sendError } from '../../utils/response';
 import { Types } from 'mongoose';
 import { toStatusLabel } from '../../utils/user-mapper';
@@ -26,7 +26,7 @@ export async function getMyProfile(req: Request, res: Response) {
       userWallet?: { balance?: number } | null;
     };
 
-    const user = await User.findById(String(userId))
+    const user = await UserModel.findById(String(userId))
       .select('userName userAvatar userMail userPhone userAddress userStatus userWallet')
       .lean<LeanUser>();
 
@@ -70,7 +70,7 @@ export async function getProfileForEdit(req: Request, res: Response) {
     const userId = req.user?.sub;
     if (!userId || !Types.ObjectId.isValid(String(userId))) return sendError(res, 401, 'Unauthorized');
 
-    const u = await User.findById(String(userId)).select('userName userMail userPhone userAddress userBanks').lean<any>();
+    const u = await UserModel.findById(String(userId)).select('userName userMail userPhone userAddress userBanks').lean<any>();
     if (!u) return sendError(res, 404, 'User not found');
 
     // pick default address same as getMyProfile
@@ -110,7 +110,7 @@ export async function patchPassword(req: Request, res: Response) {
     const { oldPassword, newPassword } = body as { oldPassword?: string; newPassword?: string };
     if (!oldPassword || !newPassword) return sendError(res, 400, 'Missing oldPassword or newPassword');
 
-    const user = await User.findById(String(userId)).select('userPassword').exec();
+    const user = await UserModel.findById(String(userId)).select('userPassword').exec();
     if (!user) return sendError(res, 404, 'User not found');
 
     // verify old password
@@ -122,7 +122,7 @@ export async function patchPassword(req: Request, res: Response) {
     // set new password hash
     updates.userPassword = hashPassword(String(newPassword));
 
-    const updated = await User.findByIdAndUpdate(String(userId), { $set: updates }, { new: true }).select('userName').lean<{ userName?: string } | null>();
+    const updated = await UserModel.findByIdAndUpdate(String(userId), { $set: updates }, { new: true }).select('userName').lean<{ userName?: string } | null>();
     if (!updated) return sendError(res, 500, 'Unable to update user');
 
     return sendSuccess(res, { name: updated.userName });
@@ -151,15 +151,15 @@ export async function patchProfile(req: Request, res: Response) {
 
     // uniqueness checks
     if (updates.userMail) {
-      const exists = await User.findOne({ userMail: updates.userMail, _id: { $ne: userId } }).lean();
+      const exists = await UserModel.findOne({ userMail: updates.userMail, _id: { $ne: userId } }).lean();
       if (exists) return sendError(res, 409, 'Email already in use', { code: 'EMAIL_TAKEN' });
     }
     if (updates.userPhone) {
-      const existsP = await User.findOne({ userPhone: updates.userPhone, _id: { $ne: userId } }).lean();
+      const existsP = await UserModel.findOne({ userPhone: updates.userPhone, _id: { $ne: userId } }).lean();
       if (existsP) return sendError(res, 409, 'Phone already in use', { code: 'PHONE_TAKEN' });
     }
 
-    const updated = await User.findByIdAndUpdate(String(userId), { $set: updates }, { new: true })
+    const updated = await UserModel.findByIdAndUpdate(String(userId), { $set: updates }, { new: true })
       .select('userName userMail userPhone')
       .lean<{ userName?: string; userMail?: string; userPhone?: string } | null>();
     if (!updated) return sendError(res, 404, 'User not found');
@@ -177,7 +177,7 @@ export async function listAddresses(req: Request, res: Response) {
     const userId = req.user?.sub;
     if (!userId || !Types.ObjectId.isValid(String(userId))) return sendError(res, 401, 'Unauthorized');
 
-    const u = await User.findById(String(userId)).select('userAddress').lean<{ userAddress?: any[] } | null>();
+    const u = await UserModel.findById(String(userId)).select('userAddress').lean<{ userAddress?: any[] } | null>();
     return sendSuccess(res, { items: u?.userAddress ?? [] });
   } catch (err: any) {
     console.error('listAddresses error', err);
@@ -192,7 +192,7 @@ export async function getAddress(req: Request, res: Response) {
     const { id } = req.params;
     if (!userId || !Types.ObjectId.isValid(String(userId)) || !Types.ObjectId.isValid(String(id))) return sendError(res, 401, 'Unauthorized');
 
-    const u = await User.findById(String(userId)).select('userAddress').lean<{ userAddress?: any[] } | null>();
+    const u = await UserModel.findById(String(userId)).select('userAddress').lean<{ userAddress?: any[] } | null>();
     const addr = u?.userAddress?.find(a => String((a as any)._id) === String(id)) || null;
     if (!addr) return sendError(res, 404, 'Address not found');
     return sendSuccess(res, addr);
@@ -211,10 +211,10 @@ export async function createAddress(req: Request, res: Response) {
 
     // if isDefault true, unset other defaults
     if (body.isDefault) {
-      await User.updateOne({ _id: userId }, { $set: { 'userAddress.$[].isDefault': false } }).exec();
+      await UserModel.updateOne({ _id: userId }, { $set: { 'userAddress.$[].isDefault': false } }).exec();
     }
 
-    const update = await User.findByIdAndUpdate(
+    const update = await UserModel.findByIdAndUpdate(
       String(userId),
       { $push: { userAddress: body } },
       { new: true }
@@ -251,10 +251,10 @@ export async function updateAddress(req: Request, res: Response) {
 
     // if setting isDefault true, unset others first
     if (newAddr.isDefault) {
-      await User.updateOne({ _id: userId }, { $set: { 'userAddress.$[].isDefault': false } }).exec();
+      await UserModel.updateOne({ _id: userId }, { $set: { 'userAddress.$[].isDefault': false } }).exec();
     }
 
-    const updated = await User.findOneAndUpdate(
+    const updated = await UserModel.findOneAndUpdate(
       { _id: userId, 'userAddress._id': id } as any,
       { $set: { 'userAddress.$[elem]': newAddr } },
   { arrayFilters: [{ 'elem._id': new Types.ObjectId(id) }], new: true }
@@ -277,7 +277,7 @@ export async function deleteAddress(req: Request, res: Response) {
     if (!userId || !Types.ObjectId.isValid(String(userId)) || !Types.ObjectId.isValid(String(id))) return sendError(res, 401, 'Unauthorized');
 
     // Pull the address subdocument by _id
-    const result = await User.findByIdAndUpdate(String(userId), { $pull: { userAddress: { _id: new Types.ObjectId(id) } } }, { new: true }).select('userAddress');
+    const result = await UserModel.findByIdAndUpdate(String(userId), { $pull: { userAddress: { _id: new Types.ObjectId(id) } } }, { new: true }).select('userAddress');
     const remaining = result?.userAddress ?? [];
     return sendSuccess(res, { items: remaining });
   } catch (err: any) {
@@ -291,7 +291,7 @@ export async function listBanks(req: Request, res: Response) {
   try {
     const userId = req.user?.sub;
     if (!userId || !Types.ObjectId.isValid(String(userId))) return sendError(res, 401, 'Unauthorized');
-    const u = await User.findById(String(userId)).select('userBanks').lean<{ userBanks?: any[] } | null>();
+    const u = await UserModel.findById(String(userId)).select('userBanks').lean<{ userBanks?: any[] } | null>();
     return sendSuccess(res, { items: u?.userBanks ?? [] });
   } catch (err: any) {
     console.error('listBanks error', err);
@@ -307,7 +307,7 @@ export async function getBank(req: Request, res: Response) {
     if (!userId || !Types.ObjectId.isValid(String(userId))) return sendError(res, 401, 'Unauthorized');
     if (!id || !String(id).trim()) return sendError(res, 400, 'Missing bank id or name');
 
-    const u = await User.findById(String(userId)).select('userBanks').lean<{ userBanks?: any[] } | null>();
+    const u = await UserModel.findById(String(userId)).select('userBanks').lean<{ userBanks?: any[] } | null>();
     const banks = u?.userBanks ?? [];
 
     // attempt to match by ObjectId first
@@ -349,7 +349,7 @@ export async function createBank(req: Request, res: Response) {
     const partnerName = partner.name;
 
     // Prevent adding more than one account for the same partner bank
-    const u = await User.findById(String(userId)).select('userBanks').lean<{ userBanks?: any[] } | null>();
+    const u = await UserModel.findById(String(userId)).select('userBanks').lean<{ userBanks?: any[] } | null>();
     const exists = (u?.userBanks ?? []).some((b) => {
       // match by bankName (current schema) or snapshot fields
       if (b.bankName && String(b.bankName).toLowerCase() === String(partnerName).toLowerCase()) return true;
@@ -372,10 +372,10 @@ export async function createBank(req: Request, res: Response) {
 
     // if this new bank is default, unset other defaults first
     if (pushObj.isDefault) {
-      await User.updateOne({ _id: userId }, { $set: { 'userBanks.$[].isDefault': false } }).exec();
+      await UserModel.updateOne({ _id: userId }, { $set: { 'userBanks.$[].isDefault': false } }).exec();
     }
 
-    const update = await User.findByIdAndUpdate(String(userId), { $push: { userBanks: pushObj } }, { new: true }).select('userBanks');
+    const update = await UserModel.findByIdAndUpdate(String(userId), { $push: { userBanks: pushObj } }, { new: true }).select('userBanks');
     const added = update?.userBanks?.slice(-1)[0] || null;
     return sendSuccess(res, added, 201);
   } catch (err: any) {
@@ -394,7 +394,7 @@ export async function updateBankByName(req: Request, res: Response) {
     if (!name || !name.trim()) return sendError(res, 400, 'Missing bank name');
 
     // find user's bank by name (case-insensitive)
-    const u = await User.findById(String(userId)).select('userBanks').lean<{ userBanks?: any[] } | null>();
+    const u = await UserModel.findById(String(userId)).select('userBanks').lean<{ userBanks?: any[] } | null>();
     const banks = u?.userBanks ?? [];
     const found = banks.find((b) => String(b.bankName || '').toLowerCase() === String(name).toLowerCase());
     if (!found) return sendError(res, 404, 'Bank account not found');
@@ -408,7 +408,7 @@ export async function updateBankByName(req: Request, res: Response) {
 
     // if setting this bank to default, unset other defaults first
     if (newBank.isDefault) {
-      await User.updateOne({ _id: userId }, { $set: { 'userBanks.$[].isDefault': false } }).exec();
+      await UserModel.updateOne({ _id: userId }, { $set: { 'userBanks.$[].isDefault': false } }).exec();
     }
 
     // find index of the matched subdocument
@@ -417,7 +417,7 @@ export async function updateBankByName(req: Request, res: Response) {
 
     // perform replacement by array index path
     const path = `userBanks.${idx}`;
-    const updated = await User.findOneAndUpdate(
+    const updated = await UserModel.findOneAndUpdate(
       { _id: userId } as any,
       { $set: { [path]: newBank } },
       { new: true }
@@ -447,7 +447,7 @@ export async function deleteBankByName(req: Request, res: Response) {
 
     // remove any userBanks that reference this partner by name (case-insensitive)
     const regex = new RegExp('^' + escapeRegExp(String(name).trim()) + '$', 'i');
-    const result = await User.findByIdAndUpdate(String(userId), { $pull: { userBanks: { bankName: { $regex: regex } } } }, { new: true }).select('userBanks');
+    const result = await UserModel.findByIdAndUpdate(String(userId), { $pull: { userBanks: { bankName: { $regex: regex } } } }, { new: true }).select('userBanks');
     const remaining = result?.userBanks ?? [];
     return sendSuccess(res, { items: remaining });
   } catch (err: any) {
@@ -487,7 +487,7 @@ export async function submitSellerApplication(req: Request, res: Response) {
       // do not modify userRole here; remain CUSTOMER until admin approves
     } as any;
 
-    const resUpdate = await User.findByIdAndUpdate(String(user.sub), { $set: update }, { new: true }).select('_id').lean();
+    const resUpdate = await UserModel.findByIdAndUpdate(String(user.sub), { $set: update }, { new: true }).select('_id').lean();
     if (!resUpdate) return sendError(res, 404, 'User not found');
     return sendSuccess(res, { ok: true });
   } catch (err: any) {

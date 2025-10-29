@@ -15,7 +15,7 @@ import {
   findNearestEndingAuction,
 } from "../../services/auction.service";
 import { findCategoriesSorted } from "../../services/category.service";
-import User from "../../models/user.model";
+import { UserModel } from "../../models/user.model";
 
 export async function getHome(req: Request, res: Response) {
   try {
@@ -201,15 +201,19 @@ export async function getProductDetail(req: Request, res: Response) {
         typeof p.productStatus === "number"
           ? PRODUCT_STATUS_LABEL[p.productStatus as ProductStatusCode]
           : undefined,
-      sellerId: (p as any).productShopId ? String((p as any).productShopId) : undefined,
+      sellerId: (p as any).productShopId
+        ? String((p as any).productShopId)
+        : undefined,
       createdAt: p.createdAt ? new Date(p.createdAt).toISOString() : undefined,
     };
 
     // include basic seller info when available
     try {
-      const sellerId = (p as any).productShopId ? String((p as any).productShopId) : null;
+      const sellerId = (p as any).productShopId
+        ? String((p as any).productShopId)
+        : null;
       if (sellerId) {
-        const seller = await User.findById(sellerId)
+        const seller = await UserModel.findById(sellerId)
           .select("_id userAvatar sellerRegistration.shopName")
           .lean<any>();
         if (seller) {
