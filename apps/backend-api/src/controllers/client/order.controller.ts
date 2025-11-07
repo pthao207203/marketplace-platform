@@ -78,6 +78,7 @@ export async function getOrderDetail(req: Request, res: Response) {
       return sendError(res, 400, "Invalid order id");
 
     const order: any = await OrderModel.findById(orderId).lean();
+    console.log("getOrderDetail: found order", order);
     if (!order) return sendError(res, 404, "Order not found");
 
     const isBuyer = String(order.orderBuyerId) === String(userId);

@@ -32,6 +32,9 @@ export async function upsertFromProvider(shipmentId: string, tmLike: any) {
           currency: "VND",
           bank: { bankName: "REFUND" },
           transactionId: `REFUND-${order._id}-${Date.now()}`,
+          // record originating order id so received-history and audits can link the refund
+          orderId: String(order._id),
+          meta: { orderId: String(order._id) },
           status: "completed",
           createdAt: new Date(),
         } as any;
