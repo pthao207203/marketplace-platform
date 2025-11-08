@@ -15,6 +15,7 @@ import {
   findNearestEndingAuction,
 } from "../../services/auction.service";
 import { findCategoriesSorted } from "../../services/category.service";
+import { ProductModel } from "../../models/product.model";
 import { UserModel } from "../../models/user.model";
 
 export async function getHome(req: Request, res: Response) {
@@ -25,21 +26,37 @@ export async function getHome(req: Request, res: Response) {
     const fByFlag = await findFeaturedAuctionByFlag({});
     const fByEnds = await findNearestEndingAuction({});
     const chosen = fByFlag ?? fByEnds;
-    const featuredAuction = chosen
-      ? {
-          id: String(chosen._id),
-          title: chosen.title,
-          imageUrl: chosen.imageUrl ?? "",
-          quantity: chosen.quantity ?? 1,
-          currentPrice: chosen.currentPrice,
-          currency: "VND" as const,
-          endsAt: chosen.endsAt
-            ? new Date(chosen.endsAt).toISOString()
-            : undefined,
-          condition: chosen.condition ?? undefined,
-          featured: !!chosen.featured,
-        }
-      : null;
+
+    // Prefer returning the linked product id when this auction was created from a product.
+    // Products reference auctions via productAuction.auctionId. Fallback to auction id if not linked.
+    let featuredAuction = null;
+    if (chosen) {
+      let idToReturn = String(chosen._id);
+      try {
+        const linked = await ProductModel.findOne({
+          "productAuction.auctionId": chosen._id,
+        })
+          .select("_id")
+          .lean<any>();
+        if (linked && linked._id) idToReturn = String(linked._id);
+      } catch (e) {
+        // non-fatal; keep auction id
+      }
+
+      featuredAuction = {
+        id: idToReturn,
+        title: chosen.title,
+        imageUrl: chosen.imageUrl ?? "",
+        quantity: chosen.quantity ?? 1,
+        currentPrice: chosen.currentPrice,
+        currency: "VND" as const,
+        endsAt: chosen.endsAt
+          ? new Date(chosen.endsAt).toISOString()
+          : undefined,
+        condition: chosen.condition ?? undefined,
+        featured: !!chosen.featured,
+      };
+    }
 
     // 2) categories
     const categoriesDocs = await findCategoriesSorted();

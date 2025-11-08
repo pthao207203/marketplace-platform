@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { requireClientAuth } from "../../middlewares/auth";
-import { addToCart, viewCart } from "../../controllers/client/cart.controller";
+import { addToCart, removeFromCart, viewCart } from "../../controllers/client/cart.controller";
 import {
   getMyProfile,
   listAddresses,
@@ -29,6 +29,7 @@ const router = Router();
 // Cart
 router.post("/cart", requireClientAuth, addToCart);
 router.get("/cart", requireClientAuth, viewCart);
+router.delete("/cart/:productId", requireClientAuth, removeFromCart);
 
 // Profile
 router.get("/", requireClientAuth, getMyProfile);

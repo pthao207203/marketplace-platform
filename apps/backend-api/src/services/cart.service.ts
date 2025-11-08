@@ -34,3 +34,22 @@ export async function getCartForUser(userId: string) {
   if (!user) throw new Error("User not found");
   return user.userCart;
 }
+
+export async function removeFromCartForUser(userId: string, productId: string) {
+  if (!Types.ObjectId.isValid(productId)) throw new Error("Invalid productId");
+
+  const user = await UserModel.findById(String(userId));
+  if (!user) throw new Error("User not found");
+
+  const before = user.userCart.length;
+  user.userCart = user.userCart.filter(
+    (c: any) => String(c.productId) !== String(productId)
+  );
+
+  if (user.userCart.length === before) {
+    // nothing removed; treat as success but unchanged
+  }
+
+  await user.save();
+  return user.userCart;
+}
