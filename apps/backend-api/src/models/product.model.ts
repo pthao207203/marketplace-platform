@@ -1,7 +1,7 @@
 import { Schema, model, Types } from "mongoose";
 import { PRODUCT_STATUS, PRODUCT_DELETED, PRODUCT_PRICE_TYPE } from "../constants/product.constants";
 
-// Product schema following the provided diagram
+// ----- Sub-schemas -----
 const ReviewSchema = new Schema({
   userId: { type: Types.ObjectId, ref: 'User', required: false },
   rating: { type: Number, min: 0, max: 5 },
@@ -14,6 +14,12 @@ const AuctionSubSchema = new Schema({
   startsAt: Date,
   endsAt: Date,
   startingPrice: Number
+}, { _id: false });
+
+// Minh chứng nguồn gốc
+const OriginProofSchema = new Schema({
+  description: { type: String },                           // mô tả minh chứng
+  images: { type: [String], default: [] }                  // danh sách link ảnh
 }, { _id: false });
 
 const ProductSchema = new Schema({
@@ -29,22 +35,50 @@ const ProductSchema = new Schema({
   productUsageTime: { type: Number },
   // ProductMedia: array of media URLs (images/videos)
   productMedia: { type: [String], default: [] },
-  // ProductStatus: numeric enum (follow user.model pattern)
+  // ProductStatus
   productStatus: { type: Number, enum: Object.values(PRODUCT_STATUS), default: PRODUCT_STATUS.ACTIVE, index: true },
   // ProductQuantity
   productQuantity: { type: Number, default: 0 },
   // ProductShopId (foreign key)
   productShopId: { type: Types.ObjectId, ref: 'User' },
-  // ProductCategory (reference to hierarchical category)
+  // ProductCategory
   productCategory: { type: Types.ObjectId, ref: 'Category', required: false, index: true },
-  // ProductBrand: reference to Brand (e.g., Samsung, iPhone)
+  // ProductBrand
   productBrand: { type: Types.ObjectId, ref: 'Brand', required: false, index: true },
-  // ProductReview: array of review objects
+  // ProductReview
   productReview: { type: [ReviewSchema], default: [] },
-  // ProductDeleted: numeric enum flag (no/yes)
+  // ProductDeleted
   productDeleted: { type: Number, enum: Object.values(PRODUCT_DELETED), default: PRODUCT_DELETED.NO, index: true },
-  // ProductAution: auction related info (optional)
-  productAution: { type: AuctionSubSchema, default: null }
+  // ProductAuction (giữ nguyên trường cũ để tương thích)
+  productAuction: { type: AuctionSubSchema, default: null },
+
+  // Tình trạng sản phẩm (ghi chú tổng quát)
+  productConditionNote: { type: String, default: "" },
+
+  // Tình trạng mới (%)
+  productNewPercent: { type: Number, min: 0, max: 100, default: 100 },
+
+  // Tình trạng hư hỏng (%)
+  productDamagePercent: { type: Number, min: 0, max: 100, default: 0 },
+
+  // Chính sách bảo hành (tháng)
+  productWarrantyMonths: { type: Number, min: 0, default: 0 },
+
+  // Chính sách đổi trả (true/false)
+  productReturnPolicy: { type: Boolean, default: false },
+
+  // Nguồn gốc sản phẩm (true/false)
+  productHasOrigin: { type: Boolean, default: false, index: true },
+
+  // Nếu có nguồn gốc: Link sản phẩm
+  productOriginLink: {
+    description: { type: String },
+    url: { type: String }
+  },
+
+  // Nếu có nguồn gốc: Minh chứng (mô tả + danh sách link ảnh)
+  originProof: { type: OriginProofSchema, default: undefined }
+
 }, { timestamps: true });
 
 export const ProductModel = model('Product', ProductSchema);

@@ -194,8 +194,15 @@ export async function getProductDetail(req: Request, res: Response) {
       price:
         typeof p.productPrice === "number"
           ? p.productPrice
-          : p.productAution?.startingPrice ?? 0,
+          : p.productAuction?.startingPrice ?? 0,
       currency: "VND" as const,
+      // if priceType 3 (auction), include auction end time
+      auctionEndsAt:
+        typeof p.productPriceType === "number" && p.productPriceType === 3
+          ? p.productAuction?.endsAt
+            ? new Date(p.productAuction.endsAt).toISOString()
+            : undefined
+          : undefined,
       quantity: typeof p.productQuantity === "number" ? p.productQuantity : 1,
       condition:
         typeof p.productStatus === "number"
@@ -205,6 +212,53 @@ export async function getProductDetail(req: Request, res: Response) {
         ? String((p as any).productShopId)
         : undefined,
       createdAt: p.createdAt ? new Date(p.createdAt).toISOString() : undefined,
+      priceType:
+        typeof p.productPriceType === "number" ? p.productPriceType : undefined,
+      usageTimeMonths:
+        typeof p.productUsageTime === "number" ? p.productUsageTime : undefined,
+      categoryId: p.productCategory ? String(p.productCategory) : undefined,
+      brandId: p.productBrand ? String(p.productBrand) : undefined,
+      reviewCount: Array.isArray(p.productReview) ? p.productReview.length : 0,
+      // compute average rating if reviews present
+      averageRating:
+        Array.isArray(p.productReview) && p.productReview.length
+          ? Math.round(
+              (p.productReview.reduce(
+                (s: number, r: any) =>
+                  s + (typeof r.rating === "number" ? r.rating : 0),
+                0
+              ) /
+                p.productReview.length) *
+                10
+            ) / 10
+          : undefined,
+      conditionNote: p.productConditionNote ?? undefined,
+      newPercent:
+        typeof p.productNewPercent === "number"
+          ? p.productNewPercent
+          : undefined,
+      damagePercent:
+        typeof p.productDamagePercent === "number"
+          ? p.productDamagePercent
+          : undefined,
+      warrantyMonths:
+        typeof p.productWarrantyMonths === "number"
+          ? p.productWarrantyMonths
+          : undefined,
+      returnPolicy:
+        typeof p.productReturnPolicy === "boolean"
+          ? p.productReturnPolicy
+          : undefined,
+      hasOrigin:
+        typeof p.productHasOrigin === "boolean"
+          ? p.productHasOrigin
+          : undefined,
+      originLink: p.productOriginLink ?? undefined,
+      originProof: p.originProof ?? undefined,
+      // convenience: thumbnail (first media)
+      thumbnail: Array.isArray(p.productMedia)
+        ? p.productMedia[0] ?? null
+        : p.productMedia ?? null,
     };
 
     // include basic seller info when available
@@ -214,14 +268,68 @@ export async function getProductDetail(req: Request, res: Response) {
         : null;
       if (sellerId) {
         const seller = await UserModel.findById(sellerId)
-          .select("_id userAvatar sellerRegistration.shopName")
+          .select(
+            "_id userAvatar sellerRegistration.shopName sellerRegistration.pickupAddress userComment userRate"
+          )
           .lean<any>();
         if (seller) {
+          // Format seller info, convert pickupAddress object to a single string
+          let pickupAddressStr: string | undefined = undefined;
+          const pickup = seller.sellerRegistration?.pickupAddress;
+          if (pickup) {
+            const parts = [pickup.province, pickup.city].filter((x) => !!x);
+            if (parts.length) pickupAddressStr = parts.join(", ");
+          }
+
           product.seller = {
             id: String(seller._id),
             userAvatar: seller.userAvatar ?? undefined,
             shopName: seller.sellerRegistration?.shopName ?? undefined,
+            userRate:
+              typeof seller.userRate === "number" ? seller.userRate : undefined,
+            pickupAddress: pickupAddressStr,
           };
+
+          // include the first review/comment from the shop's userComment array (if any)
+          try {
+            const comments = Array.isArray(seller.userComment)
+              ? seller.userComment
+              : [];
+            if (comments.length) {
+              const first = comments[0];
+              const commentObj: any = {
+                rate: typeof first.rate === "number" ? first.rate : undefined,
+                description: first.description ?? undefined,
+                media: Array.isArray(first.media) ? first.media : [],
+                createdAt: first.createdAt
+                  ? new Date(first.createdAt).toISOString()
+                  : undefined,
+                by: first.by ? String(first.by) : undefined,
+              };
+
+              // Try to enrich commenter info (name, avatar) if possible
+              if (first.by) {
+                try {
+                  const commenter = await UserModel.findById(String(first.by))
+                    .select("userName userAvatar")
+                    .lean<any>();
+                  if (commenter) {
+                    commentObj.byUser = {
+                      id: String(commenter._id),
+                      name: commenter.userName ?? undefined,
+                      avatar: commenter.userAvatar ?? undefined,
+                    };
+                  }
+                } catch (e) {
+                  // non-fatal enrichment
+                }
+              }
+
+              product.seller.firstComment = commentObj;
+            }
+          } catch (e) {
+            // non-fatal; ignore comment enrichment errors
+          }
         }
       }
     } catch (err) {
