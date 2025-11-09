@@ -13,7 +13,7 @@ const router = Router();
 router.get("/home", getHome);
 router.get("/:id", getProductDetail);
 router.get("/auctions", getAuctions);
-router.get("/auctions/:id", getAuctionById);
+router.get("/auctions/:id", requireClientAuth, getAuctionById);
 router.post("/auctions/:id/bid", requireClientAuth, placeBid);
 router.post("/negotiate/:id/buy", requireClientAuth, createNegotiationHandler);
 
