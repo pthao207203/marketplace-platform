@@ -171,6 +171,8 @@ const UserSchema = new Schema(
             rate: { type: Number, required: true, min: 1, max: 5 },
             description: { type: String },
             media: { type: [String], default: [] },
+            // optional reference to the order this review is about
+            orderId: { type: Schema.Types.ObjectId, ref: "Order" },
             createdAt: { type: Date, default: Date.now },
           },
           { _id: true, timestamps: false }
@@ -194,5 +196,7 @@ const UserSchema = new Schema(
 // Tìm kiếm nhanh theo name/mail
 UserSchema.index({ userName: "text", userMail: "text" });
 
-export type UserDoc = InferSchemaType<typeof UserSchema> & { _id: Types.ObjectId }
-export const UserModel = models.User || model('User', UserSchema)
+export type UserDoc = InferSchemaType<typeof UserSchema> & {
+  _id: Types.ObjectId;
+};
+export const UserModel = models.User || model("User", UserSchema);

@@ -37,7 +37,7 @@ export async function confirmOrderHandler(req: Request, res: Response) {
     // lock order and mark as SHIPPING
     await OrderModel.updateOne(
       { _id: orderId },
-      { $set: { orderStatus: ORDER_STATUS.SHIPPING, orderLocked: true } }
+      { $set: { orderLocked: true } }
     );
 
     // create shipment record
@@ -47,6 +47,7 @@ export async function confirmOrderHandler(req: Request, res: Response) {
         : "SIMULATOR";
     const shipment = await ShipmentModel.create({
       courierCode: courierName,
+      trackingNumber: null,
       currentStatus: 1,
       rawStatus: "LABEL_CREATED",
       events: [],
@@ -73,6 +74,10 @@ export async function confirmOrderHandler(req: Request, res: Response) {
         if (body.trackingNumber) {
           shipment.trackingNumber = body.trackingNumber;
           shipment.courierCode = body.courierCode || shipment.carrier;
+          console.log("confirmOrder: received tracking number", {
+            trackingNumber: shipment.trackingNumber,
+            courierCode: shipment.courierCode,
+          });
           await shipment.save();
 
           if (body.trackingData) {
@@ -95,7 +100,7 @@ export async function confirmOrderHandler(req: Request, res: Response) {
 
     // start local simulation only when not using the real provider
     if (process.env.TRACKING_PROVIDER !== "trackingmore") {
-      startSimulation(String(shipment._id));
+      // startSimulation(String(shipment._id));
     }
 
     return sendSuccess(res, { shipment, orderId }, 201);

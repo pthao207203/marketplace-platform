@@ -53,11 +53,73 @@ export async function listOrders(req: Request, res: Response) {
     const shipMap: Record<string, any> = {};
     for (const s of shipments) shipMap[String(s.orderId)] = s;
 
-    const out = orders.map((o: any) => ({
-      id: String(o._id),
-      order: o,
-      shipment: shipMap[String(o._id)] || null,
-    }));
+    // Determine which orders have been reviewed by this buyer (exact match via userComment.orderId)
+    const out: any[] = [];
+    try {
+      // build lists of sellerIds and orderIds to check
+      const pairs = orders.map((o: any) => {
+        const sellerIds = Array.isArray(o.orderSellerIds)
+          ? o.orderSellerIds
+          : [];
+        return {
+          orderId: String(o._id),
+          sellerId: sellerIds[0] ? String(sellerIds[0]) : null,
+        };
+      });
+
+      const sellerIdSet: string[] = Array.from(
+        new Set(
+          pairs.map((p) => p.sellerId).filter((s): s is string => Boolean(s))
+        )
+      );
+      const orderIdSet = pairs.map((p) => p.orderId);
+
+      const reviewedMap: Record<string, boolean> = {};
+      if (sellerIdSet.length && orderIdSet.length) {
+        const users = await UserModel.find({
+          _id: { $in: sellerIdSet.map((s) => new Types.ObjectId(s)) },
+          userComment: {
+            $elemMatch: {
+              by: new Types.ObjectId(String(userId)),
+              orderId: { $in: orderIdSet.map((id) => new Types.ObjectId(id)) },
+            },
+          },
+        })
+          .select("userComment")
+          .lean();
+
+        for (const u of users) {
+          const comments = Array.isArray((u as any).userComment)
+            ? (u as any).userComment
+            : [];
+          for (const c of comments) {
+            if (!c || !c.orderId) continue;
+            if (String(c.by) === String(userId))
+              reviewedMap[String(c.orderId)] = true;
+          }
+        }
+      }
+
+      for (const o of orders) {
+        const id = String(o._id);
+        out.push({
+          id,
+          order: { ...o, isReviewed: !!reviewedMap[id] },
+          shipment: shipMap[id] || null,
+        });
+      }
+    } catch (e) {
+      // On error, fall back to returning orders without isReviewed
+      console.error("listOrders: failed to compute isReviewed", e);
+      for (const o of orders) {
+        const id = String(o._id);
+        out.push({
+          id,
+          order: { ...o, isReviewed: false },
+          shipment: shipMap[id] || null,
+        });
+      }
+    }
 
     return sendSuccess(res, { page, limit, total, orders: out });
   } catch (err: any) {
@@ -106,6 +168,34 @@ export async function getOrderDetail(req: Request, res: Response) {
     } catch (e) {
       // non-fatal; continue without seller info
       console.error("getOrderDetail: failed to fetch seller basic info", e);
+    }
+
+    // determine whether this buyer has already left a review for any seller in this order
+    let isReviewed = false;
+    try {
+      const sellerIds: string[] = Array.isArray(order.orderSellerIds)
+        ? order.orderSellerIds.map((id: any) => String(id))
+        : [];
+      if (sellerIds.length) {
+        console.log("orderIds", order._id, "userId", userId);
+        // look for any seller whose userComment contains a review by this buyer for this order
+        const match = await UserModel.findOne({
+          _id: { $in: sellerIds.map((s) => new Types.ObjectId(s)) },
+          userComment: {
+            $elemMatch: {
+              by: new Types.ObjectId(String(userId)),
+              orderId: new Types.ObjectId(String(order._id)),
+            },
+          },
+        })
+          .select("_id")
+          .lean();
+        isReviewed = !!match;
+        order.isReviewed = isReviewed;
+      }
+    } catch (e) {
+      console.error("getOrderDetail: failed to determine isReviewed", e);
+      isReviewed = false;
     }
 
     return sendSuccess(res, {
@@ -545,9 +635,10 @@ export async function submitReturnRequest(req: Request, res: Response) {
       refundAmount: 0,
     };
 
+    // set returnRequest and mark order as CANCELLED
     await OrderModel.updateOne(
       { _id: orderId },
-      { $set: { returnRequest: reqDoc } }
+      { $set: { returnRequest: reqDoc, orderStatus: ORDER_STATUS.CANCELLED } }
     );
 
     return sendSuccess(res, { ok: true, returnRequest: reqDoc }, 201);
@@ -601,6 +692,8 @@ export async function rateShop(req: Request, res: Response) {
       rate,
       description,
       media,
+      // persist which order this review belongs to for exact matching
+      orderId: new Types.ObjectId(orderId),
       createdAt: new Date(),
     } as any;
 
@@ -628,6 +721,43 @@ export async function rateShop(req: Request, res: Response) {
     return sendSuccess(res, { ok: true });
   } catch (err: any) {
     console.error("rateShop error", err);
+    return sendError(res, 500, "Server error", err?.message);
+  }
+}
+
+// POST /api/orders/:id/cancel -> buyer cancels an order before shop confirms (orderLocked)
+export async function cancelOrder(req: Request, res: Response) {
+  try {
+    const userId = req.user?.sub;
+    if (!userId || !Types.ObjectId.isValid(String(userId)))
+      return sendError(res, 401, "Unauthorized");
+
+    const orderId = req.params.id;
+    if (!orderId || !Types.ObjectId.isValid(orderId))
+      return sendError(res, 400, "Invalid order id");
+
+    const order: any = await OrderModel.findById(orderId).exec();
+    if (!order) return sendError(res, 404, "Order not found");
+
+    // only buyer can cancel
+    if (String(order.orderBuyerId) !== String(userId))
+      return sendError(res, 403, "Not the buyer of this order");
+
+    // don't allow cancel if shop already confirmed / order locked or order progressed
+    if (order.orderLocked)
+      return sendError(res, 400, "Order already confirmed by shop");
+    if (order.orderStatus !== ORDER_STATUS.PENDING)
+      return sendError(res, 400, "Order cannot be cancelled at this stage");
+
+    // mark order as cancelled
+    await OrderModel.updateOne(
+      { _id: orderId },
+      { $set: { orderStatus: ORDER_STATUS.CANCELLED } }
+    );
+
+    return sendSuccess(res, { ok: true });
+  } catch (err: any) {
+    console.error("cancelOrder error", err);
     return sendError(res, 500, "Server error", err?.message);
   }
 }

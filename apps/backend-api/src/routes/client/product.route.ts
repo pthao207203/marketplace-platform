@@ -11,8 +11,8 @@ import { requireClientAuth } from "../../middlewares/auth";
 
 const router = Router();
 router.get("/home", getHome);
-router.get("/:id", getProductDetail);
 router.get("/auctions", getAuctions);
+router.get("/:id", getProductDetail);
 router.get("/auctions/:id", requireClientAuth, getAuctionById);
 router.post("/auctions/:id/bid", requireClientAuth, placeBid);
 router.post("/negotiate/:id/buy", requireClientAuth, createNegotiationHandler);
