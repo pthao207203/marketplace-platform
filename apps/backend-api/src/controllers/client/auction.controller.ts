@@ -29,7 +29,33 @@ export async function getAuctions(req: Request, res: Response) {
       endsAt: a.endsAt ? new Date(a.endsAt).toISOString() : undefined,
       condition: a.condition ?? undefined,
       featured: !!a.featured,
+      // include linked product id when this auction was created from a product
+      productId: undefined as string | undefined,
     }));
+
+    // Bulk-resolve any auctions that were created from products and attach productId
+    try {
+      const auctionIds = docs.map((d: any) => d._id).filter(Boolean);
+      if (auctionIds.length) {
+        const linked = await ProductModel.find({
+          "productAuction.auctionId": { $in: auctionIds },
+        })
+          .select("_id productAuction.auctionId")
+          .lean<any>();
+        const map: Record<string, string> = {};
+        for (const p of linked) {
+          const aid = p?.productAuction?.auctionId;
+          if (aid) map[String(aid)] = String(p._id);
+        }
+        for (const it of items) {
+          const pid = map[it.id];
+          if (pid) it.productId = pid;
+        }
+      }
+    } catch (e) {
+      // non-fatal: return items without productId mapping
+      console.warn("getAuctions: failed to resolve linked product ids", e);
+    }
 
     return sendSuccess(res, { items, page, pageSize, total });
   } catch (err: any) {

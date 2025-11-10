@@ -152,7 +152,6 @@ export async function getHome(req: Request, res: Response) {
             : undefined;
           conditionLabel = p.condition ?? undefined;
         }
-
         const dto = {
           id: String(p._id),
           title,
@@ -162,6 +161,10 @@ export async function getHome(req: Request, res: Response) {
           rating: rating ?? undefined,
           endsInSec: endsInSec ?? undefined,
           currentPrice,
+          productPriceType:
+            typeof (p as any).productPriceType === "number"
+              ? (p as any).productPriceType
+              : undefined,
           currency: "VND" as const,
         };
 
