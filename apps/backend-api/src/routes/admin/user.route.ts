@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { listSellerApplications, reviewSellerApplication } from '../../controllers/admin/user.controller';
-import { requireClientAuth } from '../../middlewares/auth';
+import { requireClientAuth } from '../../middlewares/auth.middleware';
 
 const router = Router();
 
