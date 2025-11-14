@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { requireClientAuth } from "../../middlewares/auth";
-import { addToCart, removeFromCart, viewCart } from "../../controllers/client/cart.controller";
+import { requireClientAuth } from "../../middlewares/auth.middleware";
+import { addToCart,removeFromCart, viewCart } from "../../controllers/client/cart.controller";
 import {
   getMyProfile,
   listAddresses,

@@ -15,20 +15,18 @@ import {
   findNearestEndingAuction,
 } from "../../services/auction.service";
 import { findCategoriesSorted } from "../../services/category.service";
-import { ProductModel } from "../../models/product.model";
+import { ProductModel, IProduct } from "../../models/product.model"; // Import IProduct
 import { UserModel } from "../../models/user.model";
 
 export async function getHome(req: Request, res: Response) {
   try {
     const { page, pageSize, skip, limit } = parsePaging(req.query);
 
-    // 1) featured auction: prefer featured flag; else nearest ending
+    // 1) featured auction
     const fByFlag = await findFeaturedAuctionByFlag({});
     const fByEnds = await findNearestEndingAuction({});
     const chosen = fByFlag ?? fByEnds;
 
-    // Prefer returning the linked product id when this auction was created from a product.
-    // Products reference auctions via productAuction.auctionId. Fallback to auction id if not linked.
     let featuredAuction = null;
     if (chosen) {
       let idToReturn = String(chosen._id);
@@ -40,7 +38,7 @@ export async function getHome(req: Request, res: Response) {
           .lean<any>();
         if (linked && linked._id) idToReturn = String(linked._id);
       } catch (e) {
-        // non-fatal; keep auction id
+        // non-fatal
       }
 
       featuredAuction = {
@@ -67,7 +65,7 @@ export async function getHome(req: Request, res: Response) {
       order: c.order,
     }));
 
-    // 3) suggestions - prefer products else auctions
+    // 3) suggestions
     let srcDocs: any[] = [];
     let total = 0;
 
@@ -85,11 +83,14 @@ export async function getHome(req: Request, res: Response) {
 
     const now = Date.now();
     const items = srcDocs
-      .map((p: any) => {
+      .map((doc: any) => {
+        // 🔥 SỬA LỖI 1: Ép kiểu doc (là product hoặc auction) thành 'any'
+        const p = doc as any;
+
         const isProduct =
           !!p.productName ||
           typeof p.productPrice !== "undefined" ||
-          p.productAution;
+          p.productAuction; // Sửa lỗi typo 'productAution' -> 'productAuction'
 
         let title = "";
         let imageUrl = "";
@@ -118,11 +119,11 @@ export async function getHome(req: Request, res: Response) {
             );
             rating = Math.round((sum / p.productReview.length) * 10) / 10;
           }
-          endsInSec = p.productAution?.endsAt
+          endsInSec = p.productAuction?.endsAt // Sửa lỗi typo 'productAution' -> 'productAuction'
             ? Math.max(
                 0,
                 Math.floor(
-                  (new Date(p.productAution.endsAt).getTime() - now) / 1000
+                  (new Date(p.productAuction.endsAt).getTime() - now) / 1000
                 )
               )
             : undefined;
@@ -134,6 +135,7 @@ export async function getHome(req: Request, res: Response) {
               ? PRODUCT_STATUS_LABEL[p.productStatus as ProductStatusCode]
               : undefined;
         } else {
+          // Logic cho Auction (Đã đúng)
           title = p.title ?? "";
           imageUrl = p.imageUrl ?? "";
           quantity =
@@ -152,6 +154,7 @@ export async function getHome(req: Request, res: Response) {
             : undefined;
           conditionLabel = p.condition ?? undefined;
         }
+
         const dto = {
           id: String(p._id),
           title,
@@ -198,7 +201,9 @@ export async function getProductDetail(req: Request, res: Response) {
     const id = req.params.id;
     if (!id) return sendError(res, 400, "Missing product id");
 
-    const p = await findProductById(id);
+    // 🔥 SỬA LỖI 2: Ép kiểu 'p' thành 'any'
+    const p = (await findProductById(id)) as any;
+
     if (!p) return sendError(res, 404, "Product not found");
 
     // normalize product shape for client
@@ -216,7 +221,6 @@ export async function getProductDetail(req: Request, res: Response) {
           ? p.productPrice
           : p.productAuction?.startingPrice ?? 0,
       currency: "VND" as const,
-      // if priceType 3 (auction), include auction end time
       auctionEndsAt:
         typeof p.productPriceType === "number" && p.productPriceType === 3
           ? p.productAuction?.endsAt
@@ -239,7 +243,6 @@ export async function getProductDetail(req: Request, res: Response) {
       categoryId: p.productCategory ? String(p.productCategory) : undefined,
       brandId: p.productBrand ? String(p.productBrand) : undefined,
       reviewCount: Array.isArray(p.productReview) ? p.productReview.length : 0,
-      // compute average rating if reviews present
       averageRating:
         Array.isArray(p.productReview) && p.productReview.length
           ? Math.round(
@@ -275,7 +278,6 @@ export async function getProductDetail(req: Request, res: Response) {
           : undefined,
       originLink: p.productOriginLink ?? undefined,
       originProof: p.originProof ?? undefined,
-      // convenience: thumbnail (first media)
       thumbnail: Array.isArray(p.productMedia)
         ? p.productMedia[0] ?? null
         : p.productMedia ?? null,
@@ -293,7 +295,6 @@ export async function getProductDetail(req: Request, res: Response) {
           )
           .lean<any>();
         if (seller) {
-          // Format seller info, convert pickupAddress object to a single string
           let pickupAddressStr: string | undefined = undefined;
           const pickup = seller.sellerRegistration?.pickupAddress;
           if (pickup) {
@@ -310,7 +311,7 @@ export async function getProductDetail(req: Request, res: Response) {
             pickupAddress: pickupAddressStr,
           };
 
-          // include the first review/comment from the shop's userComment array (if any)
+          // include the first review/comment
           try {
             const comments = Array.isArray(seller.userComment)
               ? seller.userComment
@@ -327,7 +328,7 @@ export async function getProductDetail(req: Request, res: Response) {
                 by: first.by ? String(first.by) : undefined,
               };
 
-              // Try to enrich commenter info (name, avatar) if possible
+              // Try to enrich commenter info
               if (first.by) {
                 try {
                   const commenter = await UserModel.findById(String(first.by))
@@ -353,7 +354,6 @@ export async function getProductDetail(req: Request, res: Response) {
         }
       }
     } catch (err) {
-      // non-fatal: just log and continue without seller info
       console.warn("getProductDetail: failed to load seller info", err);
     }
     return sendSuccess(res, product);
