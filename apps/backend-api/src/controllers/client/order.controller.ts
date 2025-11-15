@@ -5,6 +5,7 @@ import { findProductById } from "../../services/product.service";
 import { UserModel } from "../../models/user.model";
 import OrderModel from "../../models/order.model";
 import ShipmentModel from "../../models/shipment.model";
+import { ProductModel, IProduct } from "../../models/product.model";
 import {
   ORDER_STATUS,
   PAYMENT_METHOD,
@@ -32,7 +33,6 @@ export async function listOrders(req: Request, res: Response) {
       String(statusQ).trim() !== ""
     ) {
       let val: number = orderStatusNameToValue(statusQ);
-      // If user passed a numeric string, try coercing
       if (typeof statusQ === "string" && /^[0-9]+$/.test(statusQ))
         val = Number(statusQ);
       filter.orderStatus = val;
@@ -45,7 +45,7 @@ export async function listOrders(req: Request, res: Response) {
       .limit(limit)
       .lean();
 
-    // attach shipment info in one query
+    // attach shipment info
     const orderIds = orders.map((o: any) => o._id);
     const shipments = await ShipmentModel.find({
       orderId: { $in: orderIds },
@@ -53,10 +53,9 @@ export async function listOrders(req: Request, res: Response) {
     const shipMap: Record<string, any> = {};
     for (const s of shipments) shipMap[String(s.orderId)] = s;
 
-    // Determine which orders have been reviewed by this buyer (exact match via userComment.orderId)
+    // determine if reviewed
     const out: any[] = [];
     try {
-      // build lists of sellerIds and orderIds to check
       const pairs = orders.map((o: any) => {
         const sellerIds = Array.isArray(o.orderSellerIds)
           ? o.orderSellerIds
@@ -109,7 +108,6 @@ export async function listOrders(req: Request, res: Response) {
         });
       }
     } catch (e) {
-      // On error, fall back to returning orders without isReviewed
       console.error("listOrders: failed to compute isReviewed", e);
       for (const o of orders) {
         const id = String(o._id);
@@ -148,7 +146,7 @@ export async function getOrderDetail(req: Request, res: Response) {
 
     const shipment = await ShipmentModel.findOne({ orderId: order._id }).lean();
 
-    // attach basic seller info (first seller) for convenience
+    // attach basic seller info
     let sellerBasic: any = null;
     try {
       const sellerIds = Array.isArray(order.orderSellerIds)
@@ -166,11 +164,10 @@ export async function getOrderDetail(req: Request, res: Response) {
           };
       }
     } catch (e) {
-      // non-fatal; continue without seller info
       console.error("getOrderDetail: failed to fetch seller basic info", e);
     }
 
-    // determine whether this buyer has already left a review for any seller in this order
+    // determine if reviewed
     let isReviewed = false;
     try {
       const sellerIds: string[] = Array.isArray(order.orderSellerIds)
@@ -178,7 +175,6 @@ export async function getOrderDetail(req: Request, res: Response) {
         : [];
       if (sellerIds.length) {
         console.log("orderIds", order._id, "userId", userId);
-        // look for any seller whose userComment contains a review by this buyer for this order
         const match = await UserModel.findOne({
           _id: { $in: sellerIds.map((s) => new Types.ObjectId(s)) },
           userComment: {
@@ -222,17 +218,14 @@ export async function previewOrder(req: Request, res: Response) {
     const items: PreviewItem[] = Array.isArray(body.items) ? body.items : [];
     if (!items.length) return sendError(res, 400, "Missing items to preview");
 
-    // Validate productIds and quantities
     const normalized = items.map((it) => ({
       productId: String(it.productId),
       qty: Math.max(1, Number(it.qty) || 1),
     }));
 
-    // fetch products in parallel
     const proms = normalized.map((it) => findProductById(it.productId));
     const prods = await Promise.all(proms);
 
-    // collect product DTOs and compute totals; group by shop
     const byShop: Record<
       string,
       { shopId: string; shopName?: string; items: any[] }
@@ -241,8 +234,9 @@ export async function previewOrder(req: Request, res: Response) {
 
     for (let i = 0; i < normalized.length; i++) {
       const it = normalized[i];
-      const p = prods[i];
-      if (!p) continue; // skip missing product
+      // 🔥 SỬA LỖI 1: Ép kiểu 'p' thành 'any'
+      const p = prods[i] as any;
+      if (!p) continue;
 
       const price = typeof p.productPrice === "number" ? p.productPrice : 0;
       const qty = it.qty || 1;
@@ -258,7 +252,6 @@ export async function previewOrder(req: Request, res: Response) {
           items: [],
         };
 
-      // take first media as thumbnail when available
       const imageUrl = Array.isArray(p.productMedia)
         ? p.productMedia[0] ?? ""
         : p.productMedia ?? "";
@@ -273,7 +266,7 @@ export async function previewOrder(req: Request, res: Response) {
       });
     }
 
-    // fetch shop names for known shopIds (if any)
+    // ... (logic fetch shop names giữ nguyên) ...
     const shopIds = Object.values(byShop)
       .map((s) => s.shopId)
       .filter((id) => id && Types.ObjectId.isValid(String(id)));
@@ -293,20 +286,17 @@ export async function previewOrder(req: Request, res: Response) {
       }
     }
 
-    // flatten grouped shops into array
     const shopsList = Object.keys(byShop).map((k) => ({
       shopId: byShop[k].shopId,
       shopName: byShop[k].shopName,
       items: byShop[k].items,
     }));
 
-    // payment methods: wallet and COD
     const paymentMethods = [
-      { code: "WALLET", label: "Ví của tôi" },
-      { code: "COD", label: "Thanh toán khi nhận hàng" },
+      { code: "wallet", label: "Ví của tôi" },
+      { code: "cod", label: "Thanh toán khi nhận hàng" },
     ];
 
-    // fetch user's addresses
     const u = await UserModel.findById(String(userId))
       .select("userAddress userWallet")
       .lean<any>();
@@ -330,7 +320,6 @@ export async function previewOrder(req: Request, res: Response) {
 
 // POST /api/orders/place -> create an order and save to DB
 export async function placeOrder(req: Request, res: Response) {
-  // grandTotal needs to be visible in the catch block in case the transaction aborts
   let grandTotal = 0;
 
   try {
@@ -353,13 +342,12 @@ export async function placeOrder(req: Request, res: Response) {
     if (!Object.values(PAYMENT_METHOD).includes(paymentMethod as any))
       return sendError(res, 400, "Invalid paymentMethod");
 
-    // normalize items
     const normalized = items.map((it) => ({
       productId: String(it.productId),
       qty: Math.max(1, Number(it.qty) || 1),
     }));
 
-    // fetch products and ensure all exist
+    // fetch products
     const proms = normalized.map((it) => findProductById(it.productId));
     const prods = await Promise.all(proms);
     const missing = normalized
@@ -368,11 +356,13 @@ export async function placeOrder(req: Request, res: Response) {
     if (missing.length)
       return sendError(res, 400, "Some products not found", { missing });
 
-    // group items by shopId so we can create one order per shop
+    // group items by shopId
     const groups: Record<string, { items: any[]; subtotal: number }> = {};
     for (let i = 0; i < normalized.length; i++) {
       const it = normalized[i];
-      const p: any = prods[i];
+      // 🔥 SỬA LỖI 2: Ép kiểu 'p' thành 'any'
+      const p = prods[i] as any;
+
       const price = typeof p.productPrice === "number" ? p.productPrice : 0;
       const qty = it.qty || 1;
       const lineTotal = price * qty;
@@ -394,7 +384,7 @@ export async function placeOrder(req: Request, res: Response) {
       groups[shopId].subtotal += lineTotal;
     }
 
-    // resolve shipping address: either from user's saved addresses or from provided object
+    // resolve shipping address
     let shippingAddress: any = null;
     if (shippingAddressId) {
       const u = await UserModel.findById(String(userId))
@@ -412,7 +402,7 @@ export async function placeOrder(req: Request, res: Response) {
       return sendError(res, 400, "Missing shipping address");
     }
 
-    // shipping fees: allow per-shop shippingFees map or a single total shippingFee
+    // shipping fees
     const shippingFeesMap =
       body.shippingFees && typeof body.shippingFees === "object"
         ? body.shippingFees
@@ -422,7 +412,7 @@ export async function placeOrder(req: Request, res: Response) {
     const shopKeys = Object.keys(groups);
     const groupCount = shopKeys.length || 1;
 
-    // distribute shipping fee if no per-shop fees provided
+    // distribute shipping fee
     const computedShippingFees: Record<string, number> = {};
     if (shippingFeesMap) {
       for (const k of shopKeys)
@@ -439,13 +429,13 @@ export async function placeOrder(req: Request, res: Response) {
       for (const k of shopKeys) computedShippingFees[k] = 0;
     }
 
-    // compute grand total across groups to validate wallet balance
+    // compute grand total
     grandTotal = 0;
     for (const k of shopKeys) {
       grandTotal += (groups[k].subtotal || 0) + (computedShippingFees[k] || 0);
     }
 
-    // if paymentMethod is wallet, check user's wallet balance
+    // if wallet payment, check balance
     let walletBalance = 0;
     if (paymentMethod === PAYMENT_METHOD.WALLET) {
       const ubal = await UserModel.findById(String(userId))
@@ -484,15 +474,13 @@ export async function placeOrder(req: Request, res: Response) {
       orderDocs.push(orderObj);
     }
 
-    // use a transaction so creating orders + deducting wallet happen atomically
+    // use a transaction
     const session = await mongoose.startSession();
     let inserted: any[] = [];
     try {
       await session.withTransaction(async () => {
-        // insert orders within session
         inserted = await OrderModel.insertMany(orderDocs, { session });
 
-        // if wallet payment, deduct grand total once and record a negative topup record
         if (paymentMethod === PAYMENT_METHOD.WALLET) {
           const txId = body.paymentReference || `WALLET-TX-${Date.now()}`;
           const deductionRecord: any = {
@@ -504,7 +492,6 @@ export async function placeOrder(req: Request, res: Response) {
             createdAt: new Date(),
           };
 
-          // conditional update: only deduct if current balance >= grandTotal
           const res = await UserModel.updateOne(
             { _id: userId, "userWallet.balance": { $gte: grandTotal } },
             {
@@ -516,7 +503,6 @@ export async function placeOrder(req: Request, res: Response) {
           ).exec();
 
           if (!res.matchedCount && !res.modifiedCount) {
-            // balance is insufficient at commit time (race) -> abort
             throw new Error("Insufficient wallet balance at commit time");
           }
         }
@@ -532,15 +518,11 @@ export async function placeOrder(req: Request, res: Response) {
     );
   } catch (err: any) {
     console.error("placeOrder error", err);
-    // If we threw a known insufficient wallet balance error during the transaction,
-    // surface it as HTTP 402 (Payment Required) with a helpful payload instead of a 500.
     if (
       err &&
       typeof err.message === "string" &&
       err.message.includes("Insufficient wallet balance")
     ) {
-      // We don't have the exact balance at commit time (race), but we can return the required amount (grandTotal)
-      // so the client knows how much is needed.
       return sendError(res, 402, "Insufficient wallet balance at commit time", {
         walletBalance: null,
         required: grandTotal,
@@ -565,16 +547,13 @@ export async function confirmDelivery(req: Request, res: Response) {
     const order: any = await OrderModel.findById(orderId);
     if (!order) return sendError(res, 404, "Order not found");
 
-    // Only buyer can confirm
     if (String(order.orderBuyerId) !== String(userId))
       return sendError(res, 403, "Forbidden");
 
-    // find shipment linked to order (if any)
     const shipment: any = await ShipmentModel.findOne({ orderId: order._id });
     if (!shipment)
       return sendError(res, 400, "No shipment found for this order");
 
-    // ensure shipment is delivered
     if (
       shipment.currentStatus !== undefined &&
       shipment.currentStatus !== null &&
@@ -583,7 +562,6 @@ export async function confirmDelivery(req: Request, res: Response) {
       return sendError(res, 400, "Shipment not delivered yet");
     }
 
-    // mark order as delivered
     await OrderModel.updateOne(
       { _id: order._id },
       { $set: { orderStatus: ORDER_STATUS.DELIVERED } }
@@ -596,7 +574,7 @@ export async function confirmDelivery(req: Request, res: Response) {
   }
 }
 
-// POST /api/orders/:id/return -> buyer creates a return/refund request with video evidence and description
+// POST /api/orders/:id/return
 export async function submitReturnRequest(req: Request, res: Response) {
   try {
     const userId = req.user?.sub;
@@ -622,7 +600,6 @@ export async function submitReturnRequest(req: Request, res: Response) {
     if (String(order.orderBuyerId) !== String(userId))
       return sendError(res, 403, "Not the buyer of this order");
 
-    // Only orders that were delivered can be returned
     if (order.orderStatus !== ORDER_STATUS.DELIVERED)
       return sendError(res, 400, "Order not eligible for return");
 
@@ -635,7 +612,6 @@ export async function submitReturnRequest(req: Request, res: Response) {
       refundAmount: 0,
     };
 
-    // set returnRequest and mark order as CANCELLED
     await OrderModel.updateOne(
       { _id: orderId },
       { $set: { returnRequest: reqDoc, orderStatus: ORDER_STATUS.CANCELLED } }
@@ -648,7 +624,7 @@ export async function submitReturnRequest(req: Request, res: Response) {
   }
 }
 
-// POST /api/orders/:id/rate -> buyer rates the shop after delivery
+// POST /api/orders/:id/rate
 export async function rateShop(req: Request, res: Response) {
   try {
     const userId = req.user?.sub;
@@ -669,7 +645,6 @@ export async function rateShop(req: Request, res: Response) {
     if (!rate || rate < 1 || rate > 5)
       return sendError(res, 400, "Invalid rate value");
 
-    // fetch order and verify buyer and status
     const order = await OrderModel.findById(orderId).exec();
     if (!order) return sendError(res, 404, "Order not found");
     if (String(order.orderBuyerId) !== String(userId))
@@ -677,7 +652,6 @@ export async function rateShop(req: Request, res: Response) {
     if (order.orderStatus !== ORDER_STATUS.DELIVERED)
       return sendError(res, 400, "Order not delivered yet");
 
-    // determine seller(s) for this order - we only support one seller per order in current model
     const sellerIds = Array.isArray(order.orderSellerIds)
       ? order.orderSellerIds
       : [];
@@ -686,13 +660,11 @@ export async function rateShop(req: Request, res: Response) {
 
     const sellerId = String(sellerIds[0]);
 
-    // append review to seller userComment and recompute userRate
     const comment = {
       by: new Types.ObjectId(userId),
       rate,
       description,
       media,
-      // persist which order this review belongs to for exact matching
       orderId: new Types.ObjectId(orderId),
       createdAt: new Date(),
     } as any;
@@ -705,7 +677,6 @@ export async function rateShop(req: Request, res: Response) {
       : [];
     seller.userComment.push(comment);
 
-    // recompute average
     const sum = (seller.userComment || []).reduce(
       (acc: number, c: any) => acc + (Number(c.rate) || 0),
       0
@@ -725,7 +696,7 @@ export async function rateShop(req: Request, res: Response) {
   }
 }
 
-// POST /api/orders/:id/cancel -> buyer cancels an order before shop confirms (orderLocked)
+// POST /api/orders/:id/cancel
 export async function cancelOrder(req: Request, res: Response) {
   try {
     const userId = req.user?.sub;
@@ -739,17 +710,14 @@ export async function cancelOrder(req: Request, res: Response) {
     const order: any = await OrderModel.findById(orderId).exec();
     if (!order) return sendError(res, 404, "Order not found");
 
-    // only buyer can cancel
     if (String(order.orderBuyerId) !== String(userId))
       return sendError(res, 403, "Not the buyer of this order");
 
-    // don't allow cancel if shop already confirmed / order locked or order progressed
     if (order.orderLocked)
       return sendError(res, 400, "Order already confirmed by shop");
     if (order.orderStatus !== ORDER_STATUS.PENDING)
       return sendError(res, 400, "Order cannot be cancelled at this stage");
 
-    // mark order as cancelled
     await OrderModel.updateOne(
       { _id: orderId },
       { $set: { orderStatus: ORDER_STATUS.CANCELLED } }

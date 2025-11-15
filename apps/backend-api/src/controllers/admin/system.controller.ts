@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { requireClientAuth } from '../../middlewares/auth';
+import { requireClientAuth } from '../../middlewares/auth.middleware';
 import { roleIsShopOrAdmin, toRoleLabel } from '../../utils/user-mapper';
 import { USER_ROLE_CODE } from '../../constants/user.constants';
 import { sendSuccess, sendError } from '../../utils/response';

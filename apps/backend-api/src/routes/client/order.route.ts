@@ -9,7 +9,7 @@ import {
   submitReturnRequest,
   cancelOrder,
 } from "../../controllers/client/order.controller";
-import { requireClientAuth } from "../../middlewares/auth";
+import { requireClientAuth } from "../../middlewares/auth.middleware";
 
 const router = Router();
 
