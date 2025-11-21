@@ -4,12 +4,14 @@ import {
   postProduct,
   getProductDetail,
   respondNegotiationHandler,
+  getProductMeta,
 } from "../../controllers/admin/product.controller";
 
 const router = Router();
 
 // Admin product list and create
 router.get("/", getProducts);
+router.get("/meta", getProductMeta);
 router.post("/", postProduct);
 router.get("/:id", getProductDetail);
 

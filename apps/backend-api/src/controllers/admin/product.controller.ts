@@ -17,6 +17,8 @@ import {
   PRODUCT_STATUS_LABEL,
   ProductStatusCode,
 } from "../../constants/product.constants";
+import { BrandModel } from "../../models/brand.model";
+import { findCategoriesSorted } from "../../services/category.service";
 
 export async function getProducts(req: Request, res: Response) {
   try {
@@ -70,11 +72,47 @@ export async function getProducts(req: Request, res: Response) {
 
 export async function postProduct(req: Request, res: Response) {
   try {
-    const created = await createProductDoc(req.body);
+    // If a user token is provided, prefer its subject as the productShopId
+    const user = (req as any).user;
+    const payload = { ...req.body };
+    if (user && user.sub) {
+      payload.productShopId = String(user.sub);
+    }
+    const created = await createProductDoc(payload);
     return sendSuccess(res, created, 201);
   } catch (err: any) {
     console.error("postProduct error", err);
     return sendError(res, 500, "Server error", err?.message);
+  }
+}
+
+// Return categories and brands for frontend selection (flat lists)
+export async function getProductMeta(req: Request, res: Response) {
+  try {
+    const [categoriesDocs, brandDocs] = await Promise.all([
+      findCategoriesSorted(),
+      BrandModel.find({}).sort({ order: 1, name: 1 }).lean(),
+    ]);
+
+    const categories = categoriesDocs.map((c: any) => ({
+      id: String(c._id),
+      name: c.name,
+      icon: c.icon,
+      order: c.order,
+      parentId: c.parentId ? String(c.parentId) : null,
+    }));
+
+    const brands = brandDocs.map((b: any) => ({
+      id: String(b._id),
+      name: b.name,
+      logo: b.logo ?? undefined,
+      order: b.order,
+    }));
+
+    return sendSuccess(res, { categories, brands });
+  } catch (err: any) {
+    console.error("getProductMeta error", err);
+    return sendError(res, 500, "Internal error", err?.message);
   }
 }
 
@@ -133,6 +171,12 @@ export async function getProductDetail(req: Request, res: Response) {
           : undefined,
       sellerId: p.productShopId ? String(p.productShopId) : undefined,
       createdAt: p.createdAt ? new Date(p.createdAt).toISOString() : undefined,
+      originProof:
+        p.originProof && Object.keys(p.originProof).length
+          ? p.originProof
+          : p.productHasOrigin
+          ? { images: Array.isArray(p.productMedia) ? p.productMedia : [] }
+          : undefined,
     };
 
     // attach seller basic info (non-fatal)
