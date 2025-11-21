@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireClientAuth } from '../../middlewares/auth';
+import { requireClientAuth } from '../../middlewares/auth.middleware';
 import { getSystem, putSystem } from '../../controllers/admin/system.controller';
 
 const router = Router();
@@ -11,4 +11,3 @@ router.get('/', requireClientAuth, getSystem);
 router.put('/', requireClientAuth, putSystem);
 
 export default router;
-

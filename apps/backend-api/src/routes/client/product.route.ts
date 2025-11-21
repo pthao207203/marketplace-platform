@@ -7,13 +7,13 @@ import {
   getAuctionById,
 } from "../../controllers/client/auction.controller";
 import { createNegotiationHandler } from "../../controllers/client/negotiation.controller";
-import { requireClientAuth } from "../../middlewares/auth";
+import { requireClientAuth } from "../../middlewares/auth.middleware";
 
 const router = Router();
 router.get("/home", getHome);
-router.get("/auctions", getAuctions);
 router.get("/:id", getProductDetail);
-router.get("/auctions/:id", requireClientAuth, getAuctionById);
+router.get("/auctions", getAuctions);
+router.get("/auctions/:id", getAuctionById);
 router.post("/auctions/:id/bid", requireClientAuth, placeBid);
 router.post("/negotiate/:id/buy", requireClientAuth, createNegotiationHandler);
 
