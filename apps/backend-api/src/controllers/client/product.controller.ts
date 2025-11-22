@@ -15,6 +15,7 @@ import {
   findNearestEndingAuction,
 } from "../../services/auction.service";
 import { findCategoriesSorted } from "../../services/category.service";
+import { BrandModel } from "../../models/brand.model";
 import { ProductModel } from "../../models/product.model";
 import { UserModel } from "../../models/user.model";
 
@@ -273,8 +274,12 @@ export async function getProductDetail(req: Request, res: Response) {
         typeof p.productHasOrigin === "boolean"
           ? p.productHasOrigin
           : undefined,
-      originLink: p.productOriginLink ?? undefined,
-      originProof: p.originProof ?? undefined,
+      originProof:
+        p.originProof && Object.keys(p.originProof).length
+          ? p.originProof
+          : p.productHasOrigin
+          ? { images: Array.isArray(p.productMedia) ? p.productMedia : [] }
+          : undefined,
       // convenience: thumbnail (first media)
       thumbnail: Array.isArray(p.productMedia)
         ? p.productMedia[0] ?? null
