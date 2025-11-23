@@ -7,9 +7,9 @@ import { Types } from "mongoose";
 import axios from "axios";
 import { upsertFromProvider } from "../../utils/shipment-service";
 import { ORDER_STATUS } from "../../constants/order.constants";
-import { SHIPMENT_STATUS } from "../../constants/order.constants";
 import { USER_ROLE, USER_ROLE_CODE } from "../../constants/user.constants";
 
+// POST /api/admin/orders/:id/confirm
 export async function confirmOrderHandler(req: Request, res: Response) {
   try {
     const user = (req as any).user;
@@ -22,29 +22,37 @@ export async function confirmOrderHandler(req: Request, res: Response) {
     const order: any = await OrderModel.findById(orderId).lean();
     if (!order) return sendError(res, 404, "Order not found");
 
-    // check that the caller is one of the orderSellerIds
+    // Check quyền Shop
     const sellerId = String(user.sub);
     const isSeller = (order.orderSellerIds || []).some((id: any) => {
-      // If id is a Mongo ObjectId, use toHexString() when available, otherwise fallback to String()
       const idHex =
         id && typeof id.toHexString === "function"
           ? id.toHexString()
           : String(id);
       return idHex === sellerId || String(id) === sellerId;
     });
-    if (!isSeller) return sendError(res, 403, "Forbidden");
 
-    // lock order and mark as SHIPPING
+    // Cho phép Admin xác nhận giùm shop (tùy logic)
+    if (!isSeller /* && role !== ADMIN */)
+      return sendError(res, 403, "Forbidden");
+
+    // Cập nhật trạng thái đơn hàng sang SHIPPING
     await OrderModel.updateOne(
       { _id: orderId },
-      { $set: { orderLocked: true } }
+      {
+        $set: {
+          orderLocked: true,
+          orderStatus: ORDER_STATUS.SHIPPING,
+        },
+      }
     );
 
-    // create shipment record
+    // Create shipment record
     const courierName =
       process.env.TRACKING_PROVIDER === "trackingmore"
         ? "TRACKINGMORE"
         : "SIMULATOR";
+
     const shipment = await ShipmentModel.create({
       courierCode: courierName,
       trackingNumber: null,
@@ -54,18 +62,19 @@ export async function confirmOrderHandler(req: Request, res: Response) {
       orderId: orderId,
     });
 
-    // If an external tracking service is configured, ask it to create a tracking number
+    // External Tracking Logic
     try {
       const trackingServiceUrl = process.env.TRACKING_SERVICE_URL;
       if (trackingServiceUrl) {
         const callbackUrl = `${
           process.env.MAIN_APP_URL || "http://localhost:3000"
         }/trackingmore`;
+
         const resp = await axios.post(
           `${trackingServiceUrl.replace(/\/$/, "")}/create`,
           {
             orderId,
-            carrier: shipment.carrier,
+            carrier: courierName,
             callbackUrl,
           }
         );
@@ -73,7 +82,8 @@ export async function confirmOrderHandler(req: Request, res: Response) {
         const body = resp.data || {};
         if (body.trackingNumber) {
           shipment.trackingNumber = body.trackingNumber;
-          shipment.courierCode = body.courierCode || shipment.carrier;
+          shipment.courierCode = body.courierCode || courierName;
+
           console.log("confirmOrder: received tracking number", {
             trackingNumber: shipment.trackingNumber,
             courierCode: shipment.courierCode,
@@ -90,17 +100,13 @@ export async function confirmOrderHandler(req: Request, res: Response) {
         } else {
           console.warn("tracking service did not return trackingNumber", body);
         }
-      } else {
-        // Fallback: no external service configured — keep existing local behaviour
-        // startSimulation below will handle simulation for local provider
       }
     } catch (err: any) {
       console.error("call to tracking service failed", err?.message || err);
     }
 
-    // start local simulation only when not using the real provider
     if (process.env.TRACKING_PROVIDER !== "trackingmore") {
-      // startSimulation(String(shipment._id));
+      startSimulation(String(shipment._id));
     }
 
     return sendSuccess(res, { shipment, orderId }, 201);
@@ -110,7 +116,7 @@ export async function confirmOrderHandler(req: Request, res: Response) {
   }
 }
 
-// GET /admin/orders/returns/pending -> list orders with pending returnRequest
+// GET /admin/orders/returns/pending
 export async function listReturnRequests(req: Request, res: Response) {
   try {
     const docs = await OrderModel.find({ "returnRequest.status": "pending" })
@@ -123,7 +129,7 @@ export async function listReturnRequests(req: Request, res: Response) {
   }
 }
 
-// POST /admin/orders/:id/return/review -> { action: 'approve'|'reject', rejectionReason?: string }
+// POST /admin/orders/:id/return/review
 export async function reviewReturnRequest(req: Request, res: Response) {
   try {
     const user = (req as any).user;
@@ -135,15 +141,18 @@ export async function reviewReturnRequest(req: Request, res: Response) {
 
     const body = req.body || {};
     const action = String(body.action || "").toLowerCase();
+
     if (!["approve", "reject"].includes(action))
       return sendError(res, 400, "Invalid action");
 
     const order: any = await OrderModel.findById(orderId).lean();
-    if (!order) return sendError(res, 404, "Order not found");
-    if (!order.returnRequest)
-      return sendError(res, 400, "No return request found");
-    if (order.returnRequest.status !== "pending")
-      return sendError(res, 400, "Return request not pending");
+    if (
+      !order ||
+      !order.returnRequest ||
+      order.returnRequest.status !== "pending"
+    ) {
+      return sendError(res, 400, "Invalid return request state");
+    }
 
     if (action === "approve") {
       await OrderModel.updateOne(
@@ -153,6 +162,7 @@ export async function reviewReturnRequest(req: Request, res: Response) {
             "returnRequest.status": "approved",
             "returnRequest.reviewedAt": new Date(),
             "returnRequest.reviewerId": user.sub,
+            orderStatus: ORDER_STATUS.RETURNED,
           },
         }
       );
@@ -178,7 +188,7 @@ export async function reviewReturnRequest(req: Request, res: Response) {
   }
 }
 
-// GET /admin/orders/:id -> order detail (admin sees all, shop only their orders)
+// GET /api/orders/:id
 export async function getOrderDetail(req: Request, res: Response) {
   try {
     const orderId = req.params.id;
@@ -189,23 +199,16 @@ export async function getOrderDetail(req: Request, res: Response) {
     if (!order) return sendError(res, 404, "Order not found");
 
     const user = (req as any).user;
-    if (!user || !user.sub) return sendError(res, 401, "Unauthorized");
+    const userId = String(user.sub);
 
-    // resolve role (support userRole or role)
+    // Cho phép Người mua (Buyer) xem đơn của chính mình
+    if (String(order.orderBuyerId) === userId) {
+      return sendSuccess(res, { order });
+    }
+
+    // Logic check role
     const rawRole =
       typeof user.userRole !== "undefined" ? user.userRole : user.role;
-    function resolveRoleCode(role: any): number {
-      if (typeof role === "number") return Number(role);
-      if (typeof role === "string") {
-        const n = Number(role);
-        if (!Number.isNaN(n)) return n;
-        const key = String(role).toLowerCase();
-        // @ts-ignore
-        const mapped = USER_ROLE_CODE[key];
-        return typeof mapped === "number" ? mapped : NaN;
-      }
-      return NaN;
-    }
     const roleCode = resolveRoleCode(rawRole);
 
     if (roleCode === USER_ROLE.ADMIN) {
@@ -232,4 +235,22 @@ export async function getOrderDetail(req: Request, res: Response) {
   }
 }
 
-export default { confirmOrderHandler };
+function resolveRoleCode(role: any): number {
+  if (typeof role === "number") return Number(role);
+  if (typeof role === "string") {
+    const n = Number(role);
+    if (!Number.isNaN(n)) return n;
+    const key = String(role).toLowerCase();
+    // @ts-ignore
+    const mapped = USER_ROLE_CODE[key];
+    return typeof mapped === "number" ? mapped : NaN;
+  }
+  return NaN;
+}
+
+export default {
+  confirmOrderHandler,
+  listReturnRequests,
+  reviewReturnRequest,
+  getOrderDetail,
+};

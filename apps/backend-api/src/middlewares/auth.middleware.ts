@@ -36,8 +36,12 @@ export function requireClientAuth(
       ? String(auth).slice(7)
       : String(auth);
     const payload = jwt.verify(token, ENV.JWT_ACCESS_SECRET) as any;
-    // attach to req.user per project types
+    
+    // attach to req.user
     req.user = { ...payload, token };
+
+    res.locals.user = req.user; 
+
     return next();
   } catch (err: any) {
     return res.status(401).json({
@@ -65,7 +69,8 @@ export function requireAdminAuth(
       ? String(auth).slice(7)
       : String(auth);
     const payload = jwt.verify(token, ENV.JWT_ACCESS_SECRET) as any;
-    // role check - ADMIN only (accept numeric or string role values)
+    
+    // role check - ADMIN only
     if (!payload || typeof payload.role === "undefined") {
       return res.status(403).json({
         success: false,
@@ -107,14 +112,14 @@ export function requireShopOrAdminAuth(
       ? String(auth).slice(7)
       : String(auth);
     const payload = jwt.verify(token, ENV.JWT_ACCESS_SECRET) as any;
-    // allow SHOP or ADMIN (accept numeric or string role values)
+    
+    // allow SHOP or ADMIN
     if (!payload) {
       return res.status(403).json({
         success: false,
         error: { message: "Insufficient privileges" },
       });
     }
-    // support tokens that put role in either `userRole` or `role` claim
     const rawRole =
       typeof payload.userRole !== "undefined" ? payload.userRole : payload.role;
     if (typeof rawRole === "undefined") {
