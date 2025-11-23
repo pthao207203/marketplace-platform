@@ -16,6 +16,7 @@ import {
 } from "../../services/auction.service";
 import { findCategoriesSorted } from "../../services/category.service";
 import { ProductModel, IProduct } from "../../models/product.model"; // Import IProduct
+import { BrandModel } from "../../models/brand.model";
 import { UserModel } from "../../models/user.model";
 
 export async function getHome(req: Request, res: Response) {
@@ -272,7 +273,12 @@ export async function getProductDetail(req: Request, res: Response) {
           ? p.productHasOrigin
           : undefined,
       originLink: p.productOriginLink ?? undefined,
-      originProof: p.originProof ?? undefined,
+      originProof:
+        p.originProof && Object.keys(p.originProof).length
+          ? p.originProof
+          : p.productHasOrigin
+          ? { images: Array.isArray(p.productMedia) ? p.productMedia : [] }
+          : undefined,
       thumbnail: Array.isArray(p.productMedia)
         ? p.productMedia[0] ?? null
         : p.productMedia ?? null,

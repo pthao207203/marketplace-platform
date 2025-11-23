@@ -62,7 +62,7 @@ const ReviewSchema = new Schema<IReview>(
     comment: { type: String },
     createdAt: { type: Date, default: () => new Date() },
   },
-  { _id: false }
+  { _id: false } // Không tạo _id cho sub-document
 );
 
 const AuctionSubSchema = new Schema<IAuctionSub>(
@@ -130,15 +130,20 @@ const ProductSchema = new Schema<IProduct>(
     productWarrantyMonths: { type: Number, min: 0, default: 0 },
     productReturnPolicy: { type: Boolean, default: false },
     productHasOrigin: { type: Boolean, default: false, index: true },
+
     productOriginLink: {
       description: { type: String },
       url: { type: String },
     },
+
     originProof: { type: OriginProofSchema, default: undefined },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
 export const ProductModel =
   models.Product || model<IProduct>("Product", ProductSchema);
+
 export default ProductModel;
