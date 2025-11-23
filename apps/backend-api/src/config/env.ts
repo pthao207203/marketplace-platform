@@ -14,4 +14,6 @@ export const ENV = {
   ZALO_APP_ID: parseInt(process.env.ZALO_APP_ID || "2554", 10),
   ZALO_KEY1: process.env.ZALO_KEY1 || "sdngKKJmqEMzvh5QQcdD2A9XBSKUNaYn",
   ZALO_KEY2: process.env.ZALO_KEY2 || "trMrHtvjo6myautxDUiAcYsVtaeQ8nhf",
+  GOOGLE_CLIENT_IDS: process.env.GOOGLE_CLIENT_IDS || '',
+
 };
