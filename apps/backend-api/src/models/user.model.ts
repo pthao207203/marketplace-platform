@@ -186,6 +186,21 @@ const UserSchema = new Schema(
       default: { status: "none" },
     },
     userCart: { type: [CartItemSchema], default: [] },
+    // Authentication providers linked to this user (google, facebook, ...)
+    authProviders: {
+      type: [
+        new Schema(
+          {
+            provider: { type: String, required: true },
+            uid: { type: String, required: true },
+            createdAt: { type: Date, default: Date.now },
+            meta: { type: Schema.Types.Mixed },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
   },
   {
     timestamps: true,
@@ -196,7 +211,5 @@ const UserSchema = new Schema(
 // Tìm kiếm nhanh theo name/mail
 UserSchema.index({ userName: "text", userMail: "text" });
 
-export type UserDoc = InferSchemaType<typeof UserSchema> & {
-  _id: Types.ObjectId;
-};
-export const UserModel = models.User || model("User", UserSchema);
+export type UserDoc = InferSchemaType<typeof UserSchema> & { _id: Types.ObjectId }
+export const UserModel = models.User || model('User', UserSchema)
