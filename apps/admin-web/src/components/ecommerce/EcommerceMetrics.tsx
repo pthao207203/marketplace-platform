@@ -1,78 +1,123 @@
 import {
   ArrowDownIcon,
   ArrowUpIcon,
-  BoxIconLine,
-  GroupIcon,
-  ShopIcon,
+  Users,
+  Credit_Card_01,
+  Data,
+  File_Document,  
 } from "../../icons";
 import Badge from "../ui/badge/Badge";
+import useCountUp from "../../hooks/useCountUp"; // Đường dẫn tới hook của bạn
 
 export default function EcommerceMetrics() {
-  return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:gap-6">
-      
-      <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] md:p-6">
-        <div className="flex items-center justify-center w-12 h-12 bg-gray-200 rounded-xl dark:bg-white-800">
-          <GroupIcon className="text-gray-800 size-6 dark:text-gray/90" />
-        </div>
+  // Dùng hook để tạo hiệu ứng đếm
+  const totalRevenue = useCountUp(389526, 1400);
+  const totalProducts = useCountUp(1024);
+  const totalUsers = useCountUp(5359);
+  const totalOrders = useCountUp(1024);
 
-        <div className="flex items-end justify-between mt-5">
+  // Format số có dấu chấm ngăn cách (ví dụ: 389,526)
+  const formatNumber = (num: number) => {
+    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  };
+
+  return (
+    <div className="flex flex-col gap-[10px] w-full min-w-[200px]">
+      {/* Card 1 - Tổng tiền */}
+      <div className="rounded-[16px] bg-[#F25C05] p-[15px] flex flex-col justify-between">
+        <div className="flex items-center mb-[30px]">
+          <Credit_Card_01 className="text-white mr-2 w-6 h-6" />
+          <span className="text-[18px] max-md:text-[16px] font-bold text-white">
+            Tổng tiền
+          </span>
+        </div>
+        <div className="flex items-end justify-between">
           <div>
-            <span className="text-sm text-gray-500 dark:text-gray-500">
-              Customers
-            </span>
-            <h4 className="mt-2 font-bold text-gray-800 text-title-sm dark:text-gray/90">
-              3,782
+            <h3 className="text-[14px] max-md:text-[12px] font-normal text-white/90">
+              +20,000
+            </h3>
+            <h4 className="text-[22px] max-md:text-[20px] font-bold text-white mt-[5px] tabular-nums">
+              {formatNumber(totalRevenue)}
             </h4>
           </div>
           <Badge color="success">
-            <ArrowUpIcon />
+            <ArrowUpIcon className="w-4 h-4" />
             11.01%
           </Badge>
         </div>
       </div>
 
-      <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] md:p-6">
-        <div className="flex items-center justify-center w-12 h-12 bg-gray-200 rounded-xl dark:bg-white-800">
-          <ShopIcon className="text-gray-800 size-6 dark:text-gray/90" />
+      {/* Card 2 - Sản phẩm */}
+      <div className="rounded-[16px] bg-white border border-gray-200 p-[15px] flex flex-col justify-between">
+        <div className="flex items-center mb-4">
+          <Data className="text-[#441A02] mr-2 w-6 h-6" />
+          <span className="text-[18px] max-md:text-[16px] font-normal text-[#441A02]">
+            Sản Phẩm
+          </span>
         </div>
-        <div className="flex items-end justify-between mt-5">
+        <div className="flex items-end justify-between">
           <div>
-            <span className="text-sm text-gray-500 dark:text-gray-500">
-              Shops
-            </span>
-            <h4 className="mt-2 font-bold text-gray-800 text-title-sm dark:text-gray/90">
-              245
+            <h3 className="text-[14px] max-md:text-[12px] font-normal text-[#441A02]/80">
+              +120
+            </h3>
+            <h4 className="text-[22px] max-md:text-[20px] font-bold text-[#441A02] mt-[5px] tabular-nums">
+              {formatNumber(totalProducts)}
             </h4>
           </div>
           <Badge color="success">
-            <ArrowUpIcon />
-            5.25%
+            <ArrowUpIcon className="w-4 h-4" />
+            3.75%
           </Badge>
         </div>
       </div>
 
-      <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 
-                dark:bg-white/[0.03] md:p-6 sm:col-span-2">
-        <div className="flex items-center justify-center w-12 h-12 bg-gray-200 rounded-xl dark:bg-white-800">
-          <BoxIconLine className="text-gray-800 size-6 dark:text-gray/90" />
+      {/* Card 3 - Người dùng */}
+      <div className="rounded-[16px] bg-white border border-gray-200 p-[15px] flex flex-col justify-between">
+        <div className="flex items-center mb-4">
+          <Users className="text-[#441A02] mr-2 w-6 h-6" />
+          <span className="text-[18px] max-md:text-[16px] font-normal text-[#441A02]">
+            Người dùng
+          </span>
         </div>
-        <div className="flex items-end justify-between mt-5">
+        <div className="flex items-end justify-between">
           <div>
-            <span className="text-sm text-gray-500 dark:text-gray-500">
-              Orders
-            </span>
-            <h4 className="mt-2 font-bold text-gray-800 text-title-sm dark:text-gray/90">
-              5,359
+            <h3 className="text-[14px] max-md:text-[12px] font-normal text-red-600">
+              +500
+            </h3>
+            <h4 className="text-[22px] max-md:text-[20px] font-bold text-[#441A02] mt-[5px] tabular-nums">
+              {formatNumber(totalUsers)}
             </h4>
           </div>
           <Badge color="error">
-            <ArrowDownIcon />
+            <ArrowDownIcon className="w-4 h-4" />
             9.05%
           </Badge>
         </div>
       </div>
 
+      {/* Card 4 - Đơn hàng */}
+      <div className="rounded-[16px] bg-white border border-gray-200 p-[15px] flex flex-col justify-between">
+        <div className="flex items-center mb-4">
+          <File_Document className="text-[#441A02] mr-2 w-6 h-6" />
+          <span className="text-[18px] max-md:text-[16px] font-normal text-[#441A02]">
+            Đơn hàng
+          </span>
+        </div>
+        <div className="flex items-end justify-between">
+          <div>
+            <h3 className="text-[14px] max-md:text-[12px] font-normal text-[#441A02]/80">
+              +120
+            </h3>
+            <h4 className="text-[22px] max-md:text-[20px] font-bold text-[#441A02] mt-[5px] tabular-nums">
+              {formatNumber(totalOrders)}
+            </h4>
+          </div>
+          <Badge color="success">
+            <ArrowUpIcon className="w-4 h-4" />
+            3.75%
+          </Badge>
+        </div>
+      </div>
     </div>
   );
 }

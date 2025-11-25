@@ -1,162 +1,131 @@
 import Chart from "react-apexcharts";
 import type { ApexOptions } from "apexcharts";
+import useCountUp from "../../hooks/useCountUp"; // Điều chỉnh đường dẫn nếu cần
 
-export default function MonthlyTarget() {
-  const series = [75.55];
-  const options: ApexOptions = {
-    colors: ["#465FFF"],
+export default function CustomerToShopChart() {
+  // Dùng hook đếm số - giữ nguyên giá trị cuối
+  const customerBefore = useCountUp(250000);
+  const shopBefore = useCountUp(250000);
+  const customerNow = useCountUp(250000);
+  const shopNow = useCountUp(280000);
+
+  // Format số có dấu chấm phẩy (giống VN)
+  const f = (num: number) => num.toLocaleString("vi-VN");
+
+  const seriesBefore = [85];
+  const seriesNow = [78];
+
+  const baseOptions: ApexOptions = {
     chart: {
-      fontFamily: "Outfit, sans-serif",
       type: "radialBar",
-      height: 330,
-      sparkline: {
-        enabled: true,
-      },
+      sparkline: { enabled: true },
+      height: 200,
     },
     plotOptions: {
       radialBar: {
-        startAngle: -85,
-        endAngle: 85,
-        hollow: {
-          size: "80%",
-        },
-        track: {
-          background: "#E4E7EC",
-          strokeWidth: "100%",
-          margin: 5, // margin is in pixels
-        },
+        startAngle: -90,
+        endAngle: 90,
+        track: { background: "#FECACA", strokeWidth: "100%" },
+        hollow: { size: "60%" },
         dataLabels: {
-          name: {
-            show: false,
-          },
+          show: true,
+          name: { show: false },
           value: {
-            fontSize: "36px",
-            fontWeight: "600",
-            offsetY: -40,
-            color: "#1D2939",
-            formatter: function (val) {
-              return val + "%";
-            },
+            offsetY: -5,
+            fontSize: "28px",
+            fontWeight: "bold",
+            color: "#1F2937",
+            formatter: (val) => `${val}%`,
           },
         },
       },
     },
+    stroke: { lineCap: "round" },
+  };
+
+  const optionsBefore: ApexOptions = {
+    ...baseOptions,
+    colors: ["#F97316", "#FBBF24"],
+    series: seriesBefore,
+    labels: ["Customer", "Shop"],
     fill: {
-      type: "solid",
-      colors: ["#F25C05"],
+      type: "gradient",
+      gradient: {
+        shade: "dark",
+        type: "horizontal",
+        shadeIntensity: 0.5,
+        gradientToColors: ["#FBBF24"],
+        inverseColors: false,
+        opacityFrom: 1,
+        opacityTo: 1,
+        stops: [0, 100],
+      },
     },
-    stroke: {
-      lineCap: "round",
+  };
+
+  const optionsNow: ApexOptions = {
+    ...baseOptions,
+    colors: ["#F97316", "#FBBF24"],
+    series: seriesNow,
+    labels: ["Customer", "Shop"],
+    fill: {
+      type: "gradient",
+      gradient: {
+        shade: "dark",
+        type: "horizontal",
+        shadeIntensity: 0.5,
+        gradientToColors: ["#FBBF24"],
+        inverseColors: false,
+        opacityFrom: 1,
+        opacityTo: 1,
+        stops: [0, 100],
+      },
     },
-    labels: ["Progress"],
   };
 
   return (
-    <div className="h-full rounded-2xl border border-gray-200 bg-gray-100 dark:border-gray-800 dark:bg-white/[0.03]">
-      <div className="px-5 pt-5 bg-white shadow-default rounded-2xl pb-11 dark:bg-gray-900 sm:px-6 sm:pt-6">
-        <div className="flex justify-between">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
-              Monthly Target
-            </h3>
-            <p className="mt-1 text-gray-500 text-theme-sm dark:text-gray-400">
-              Target you’ve set for each month
-            </p>
-          </div>
-          
-        </div>
-        <div className="relative ">
-          <div className="max-h-[330px]" id="chartDarkStyle">
-            <Chart
-              options={options}
-              series={series}
-              type="radialBar"
-              height={330}
-            />
-          </div>
+    <div className="w-full rounded-2xl bg-gradient-to-b from-[#FBCCB2] to-white from-0% via-5% to-40% border border-gray-200 px-[30px] py-[20px]">
+      <h3 className="text-[18px] max-md:text-[16px] font-normal text-[#441A02]">
+        Biểu đồ thống kê số lượng người dùng trở thành shop
+      </h3>
 
-          <span className="absolute left-1/2 top-full -translate-x-1/2 -translate-y-[95%] rounded-full bg-success-50 px-3 py-1 text-xs font-medium text-success-600 dark:bg-success-500/15 dark:text-success-500">
-            +10%
-          </span>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="text-center">
+          <Chart options={optionsBefore} series={seriesBefore} type="radialBar" height={220} />
         </div>
-        <p className="mx-auto mt-10 w-full max-w-[380px] text-center text-sm text-gray-500 sm:text-base">
-          You earn $3287 today, it's higher than last month. Keep up your good
-          work!
-        </p>
+        <div className="text-center">
+          <Chart options={optionsNow} series={seriesNow} type="radialBar" height={220} />
+        </div>
       </div>
 
-      <div className="flex items-center justify-center gap-5 px-6 py-3.5 sm:gap-8 sm:py-5">
-        <div>
-          <p className="mb-1 text-center text-gray-500 text-theme-xs dark:text-gray-500 sm:text-sm">
-            Target
-          </p>
-          <p className="flex items-center justify-center gap-1 text-base font-semibold text-gray-800 dark:text-gray/90 sm:text-lg">
-            $20K
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 16 16"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                fillRule="evenodd"
-                clipRule="evenodd"
-                d="M7.26816 13.6632C7.4056 13.8192 7.60686 13.9176 7.8311 13.9176C7.83148 13.9176 7.83187 13.9176 7.83226 13.9176C8.02445 13.9178 8.21671 13.8447 8.36339 13.6981L12.3635 9.70076C12.6565 9.40797 12.6567 8.9331 12.3639 8.6401C12.0711 8.34711 11.5962 8.34694 11.3032 8.63973L8.5811 11.36L8.5811 2.5C8.5811 2.08579 8.24531 1.75 7.8311 1.75C7.41688 1.75 7.0811 2.08579 7.0811 2.5L7.0811 11.3556L4.36354 8.63975C4.07055 8.34695 3.59568 8.3471 3.30288 8.64009C3.01008 8.93307 3.01023 9.40794 3.30321 9.70075L7.26816 13.6632Z"
-                fill="#D92D20"
-              />
-            </svg>
-          </p>
+      <div className="flex justify-center gap-8 mt-[30px]">
+        <div className="flex items-center gap-2">
+          <div className="w-4 h-4 rounded-full bg-orange-500"></div>
+          <span className="text-sm text-gray-700">Customer</span>
         </div>
-
-        <div className="w-px bg-gray-200 h-7 dark:bg-gray-800"></div>
-
-        <div>
-          <p className="mb-1 text-center text-gray-500 text-theme-xs dark:text-gray-500 sm:text-sm">
-            Revenue
-          </p>
-          <p className="flex items-center justify-center gap-1 text-base font-semibold text-gray-800 dark:text-gray/90 sm:text-lg">
-            $20K
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 16 16"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                fillRule="evenodd"
-                clipRule="evenodd"
-                d="M7.60141 2.33683C7.73885 2.18084 7.9401 2.08243 8.16435 2.08243C8.16475 2.08243 8.16516 2.08243 8.16556 2.08243C8.35773 2.08219 8.54998 2.15535 8.69664 2.30191L12.6968 6.29924C12.9898 6.59203 12.9899 7.0669 12.6971 7.3599C12.4044 7.6529 11.9295 7.65306 11.6365 7.36027L8.91435 4.64004L8.91435 13.5C8.91435 13.9142 8.57856 14.25 8.16435 14.25C7.75013 14.25 7.41435 13.9142 7.41435 13.5L7.41435 4.64442L4.69679 7.36025C4.4038 7.65305 3.92893 7.6529 3.63613 7.35992C3.34333 7.06693 3.34348 6.59206 3.63646 6.29926L7.60141 2.33683Z"
-                fill="#039855"
-              />
-            </svg>
-          </p>
+        <div className="flex items-center gap-2">
+          <div className="w-4 h-4 rounded-full bg-yellow-400"></div>
+          <span className="text-sm text-gray-700">Shop</span>
         </div>
+      </div>
 
-        <div className="w-px bg-gray-200 h-7 dark:bg-gray-800"></div>
-
+      {/* Chỉ thay 4 dòng số này */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-[5px] mt-[32px] text-center">
         <div>
-          <p className="mb-1 text-center text-gray-500 text-theme-xs dark:text-gray-500 sm:text-sm">
-            Today
-          </p>
-          <p className="flex items-center justify-center gap-1 text-base font-semibold text-gray-800 dark:text-gray/90 sm:text-lg">
-            $20K
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 16 16"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                fillRule="evenodd"
-                clipRule="evenodd"
-                d="M7.60141 2.33683C7.73885 2.18084 7.9401 2.08243 8.16435 2.08243C8.16475 2.08243 8.16516 2.08243 8.16556 2.08243C8.35773 2.08219 8.54998 2.15535 8.69664 2.30191L12.6968 6.29924C12.9898 6.59203 12.9899 7.0669 12.6971 7.3599C12.4044 7.6529 11.9295 7.65306 11.6365 7.36027L8.91435 4.64004L8.91435 13.5C8.91435 13.9142 8.57856 14.25 8.16435 14.25C7.75013 14.25 7.41435 13.9142 7.41435 13.5L7.41435 4.64442L4.69679 7.36025C4.4038 7.65305 3.92893 7.6529 3.63613 7.35992C3.34333 7.06693 3.34348 6.59206 3.63646 6.29926L7.60141 2.33683Z"
-                fill="#039855"
-              />
-            </svg>
-          </p>
+          <div className="bg-[#EFF1F5] text-[14px] max-md:text-[12px] text-[#441A02]">Customer Before</div>
+          <div className="text-[22px] max-md:text-[20px] font-bold text-[#441A02]">{f(customerBefore)}</div>
+        </div>
+        <div>
+          <div className="bg-[#EFF1F5] text-[14px] max-md:text-[12px] text-[#441A02]">Shop Before</div>
+          <div className="text-[22px] max-md:text-[20px] font-bold text-[#441A02]">{f(shopBefore)}</div>
+        </div>
+        <div>
+          <div className="bg-[#EFF1F5] text-[14px] max-md:text-[12px] text-[#441A02]">Customer Now</div>
+          <div className="text-[22px] max-md:text-[20px] font-bold text-[#441A02]">{f(customerNow)}</div>
+        </div>
+        <div>
+          <div className="bg-[#EFF1F5] text-[14px] max-md:text-[12px] text-[#441A02]">Shop Now</div>
+          <div className="text-[22px] max-md:text-[20px] font-bold text-[#441A02]">{f(shopNow)}</div>
         </div>
       </div>
     </div>
