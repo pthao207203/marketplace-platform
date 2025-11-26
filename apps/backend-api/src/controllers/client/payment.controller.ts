@@ -19,7 +19,7 @@ const ZALO_ENDPOINT = "https://sb-openapi.zalopay.vn/v2/create";
 // TẠO GIAO DỊCH ZALOPAY
 export const createZaloPayPayment = async (req: Request, res: Response) => {
   try {
-    const { items: reqItems, shippingAddress } = req.body;
+    const { items: reqItems, shippingAddress, shippingFee = 15000 } = req.body;
     const buyerId = res.locals.user?.sub;
 
     if (!buyerId)
@@ -62,7 +62,6 @@ export const createZaloPayPayment = async (req: Request, res: Response) => {
     }
 
     const shopKeys = Object.keys(groups);
-    const shippingFee = 15000;
     grandTotal += shopKeys.length * shippingFee;
 
     // Làm tròn tiền

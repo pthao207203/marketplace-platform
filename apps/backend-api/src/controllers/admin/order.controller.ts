@@ -9,7 +9,6 @@ import { upsertFromProvider } from "../../utils/shipment-service";
 import { ORDER_STATUS } from "../../constants/order.constants";
 import { USER_ROLE, USER_ROLE_CODE } from "../../constants/user.constants";
 
-// POST /api/admin/orders/:id/confirm
 export async function confirmOrderHandler(req: Request, res: Response) {
   try {
     const user = (req as any).user;
@@ -22,8 +21,8 @@ export async function confirmOrderHandler(req: Request, res: Response) {
     const order: any = await OrderModel.findById(orderId).lean();
     if (!order) return sendError(res, 404, "Order not found");
 
-    // Check quyền Shop
     const sellerId = String(user.sub);
+
     const isSeller = (order.orderSellerIds || []).some((id: any) => {
       const idHex =
         id && typeof id.toHexString === "function"
@@ -31,12 +30,9 @@ export async function confirmOrderHandler(req: Request, res: Response) {
           : String(id);
       return idHex === sellerId || String(id) === sellerId;
     });
-
-    // Cho phép Admin xác nhận giùm shop (tùy logic)
     if (!isSeller /* && role !== ADMIN */)
       return sendError(res, 403, "Forbidden");
 
-    // Cập nhật trạng thái đơn hàng sang SHIPPING
     await OrderModel.updateOne(
       { _id: orderId },
       {
@@ -47,7 +43,6 @@ export async function confirmOrderHandler(req: Request, res: Response) {
       }
     );
 
-    // Create shipment record
     const courierName =
       process.env.TRACKING_PROVIDER === "trackingmore"
         ? "TRACKINGMORE"
@@ -62,7 +57,6 @@ export async function confirmOrderHandler(req: Request, res: Response) {
       orderId: orderId,
     });
 
-    // External Tracking Logic
     try {
       const trackingServiceUrl = process.env.TRACKING_SERVICE_URL;
       if (trackingServiceUrl) {
@@ -201,12 +195,10 @@ export async function getOrderDetail(req: Request, res: Response) {
     const user = (req as any).user;
     const userId = String(user.sub);
 
-    // Cho phép Người mua (Buyer) xem đơn của chính mình
     if (String(order.orderBuyerId) === userId) {
       return sendSuccess(res, { order });
-    }
+    } // Logic check role
 
-    // Logic check role
     const rawRole =
       typeof user.userRole !== "undefined" ? user.userRole : user.role;
     const roleCode = resolveRoleCode(rawRole);
@@ -235,13 +227,58 @@ export async function getOrderDetail(req: Request, res: Response) {
   }
 }
 
+// GET /api/shops/:shopId/orders
+export async function listShopOrdersByStatusHandler(
+  req: Request,
+  res: Response
+) {
+  try {
+    const user = (req as any).user;
+    if (!user || !user.sub) return sendError(res, 401, "Unauthorized");
+
+    const shopIdFromToken = String(user.sub);
+
+    const shopIdFromPath = req.params.shopId;
+
+    const status = req.query.status as string;
+
+    if (shopIdFromPath !== shopIdFromToken) {
+      return sendError(res, 403, "Forbidden: Shop ID mismatch");
+    }
+
+    const query: any = {};
+
+    query.orderSellerIds = shopIdFromToken;
+
+    if (status) {
+      const statusInt = parseInt(status);
+      if (!isNaN(statusInt)) {
+        query.orderStatus = statusInt;
+      } else {
+        return sendError(res, 400, "Invalid status parameter");
+      }
+    }
+
+    const orders = await OrderModel.find(query).sort({ createdAt: -1 }).lean();
+
+    const wrappedOrders = orders.map((order: any) => ({
+      id: order._id,
+      order: order,
+    }));
+
+    return sendSuccess(res, { orders: wrappedOrders });
+  } catch (err: any) {
+    console.error("listShopOrdersByStatusHandler error", err);
+    return sendError(res, 500, "Server error", err?.message);
+  }
+}
+
 function resolveRoleCode(role: any): number {
   if (typeof role === "number") return Number(role);
   if (typeof role === "string") {
     const n = Number(role);
     if (!Number.isNaN(n)) return n;
-    const key = String(role).toLowerCase();
-    // @ts-ignore
+    const key = String(role).toLowerCase(); // @ts-ignore
     const mapped = USER_ROLE_CODE[key];
     return typeof mapped === "number" ? mapped : NaN;
   }
@@ -253,4 +290,5 @@ export default {
   listReturnRequests,
   reviewReturnRequest,
   getOrderDetail,
+  listShopOrdersByStatusHandler,
 };

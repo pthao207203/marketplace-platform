@@ -4,9 +4,12 @@ import {
   getOrderDetail,
   listReturnRequests,
   reviewReturnRequest,
+  listShopOrdersByStatusHandler,
 } from "../../controllers/admin/order.controller";
 
 const router = Router();
+
+router.get("/:shopId/orders", listShopOrdersByStatusHandler);
 
 // Admin/shop order detail
 router.get("/:id", getOrderDetail);
