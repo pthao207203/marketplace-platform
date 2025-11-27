@@ -6,10 +6,14 @@ import AppLayout from "./layouts/AppLayout";
 import { ScrollToTop } from "./components/common/ScrollToTop";
 import Home from "./pages/Dashboard/Home";
 import ListOfOrder from "./pages/Orders/ListOfOrder";
+import DetailOfOrder from "./pages/Orders/DetailOfOrder"
+import Language from "./pages/Language/Languages"
+
+import { LanguageProvider } from "./i18n/language";
 
 export default function App() {
   return (
-    <>
+    <LanguageProvider>
       <Router>
         <ScrollToTop />
         <Routes>
@@ -18,9 +22,19 @@ export default function App() {
             <Route index path="/" element={<Home />} />
           </Route>
 
-          {/* Order Layout */}
+          {/* OrderList Layout */}
           <Route element={<AppLayout />}>
             <Route index path="/listoforder" element={<ListOfOrder />} />
+          </Route>
+          
+          {/* OrderDetail Layout */}
+          <Route element={<AppLayout />}>
+            <Route index path="/detailoforder/:orderId" element={<DetailOfOrder />} />
+          </Route>  
+
+          {/*Language Layout*/}
+          <Route element={<AppLayout />}>
+            <Route index path="/language" element={<Language />} />
           </Route>
 
           {/* Auth Layout */}
@@ -31,6 +45,6 @@ export default function App() {
           <Route path="*" element={<NotFound />} />
         </Routes>
       </Router>
-    </>
+    </LanguageProvider>
   );
 }

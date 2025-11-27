@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Order } from './sampleData'; 
-
+import { useNavigate } from "react-router";
 
 const PaymentIcon = ({ paid }: { paid: boolean }) => (
     <div className={`size-3 rounded-full mx-auto ${paid ? 'bg-orange-500' : 'border border-gray-400'}`}></div>
@@ -51,24 +51,24 @@ const OrderTable: React.FC<OrderTableProps> = ({ orders }) => {
   if (orders.length === 0) {
     return <div className="text-center py-10 text-gray-500">No orders found.</div>;
   }
-
+  const navigate = useNavigate();
   return (
     <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-        <thead className="bg-gray-50 dark:bg-white/[0.05]">
+      <table className="min-w-full divide-y divide-orange-200 dark:divide-orange-700">
+        <thead className="bg-orange-50 dark:bg-white/[0.05]">   
           <tr>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">ORDER ID</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">CREATION DATE</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">COMPLETION DATE</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">STATUS</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">TOTAL</th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">PAID</th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">ACT</th>
+            <th className="px-4 py-3 text-center text-xs font-medium text-gray-700 uppercase tracking-wider">PAID</th>
+            <th className="px-4 py-3 text-center text-xs font-medium text-gray-700 uppercase tracking-wider">ACT</th>
           </tr>
         </thead>
         <tbody className="bg-white divide-y divide-gray-200 dark:bg-transparent dark:divide-gray-700">
           {orders.map((order) => (
-            <tr key={order.Orderid} className="hover:bg-gray-50 dark:hover:bg-white/5 transition duration-150">
+            <tr key={order.Orderid} className="hover:bg-orange-50 dark:hover:bg-white/5 transition duration-150">
               
               <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">
                 <div className="flex items-start space-x-2">
@@ -101,11 +101,10 @@ const OrderTable: React.FC<OrderTableProps> = ({ orders }) => {
               </td>
               
               <td className="px-4 py-3 whitespace-nowrap text-center align-middle">
-                {order.CanConfirm && (
-                  <button className="bg-orange-500 text-white text-xs font-semibold py-1 px-3 rounded-lg hover:bg-orange-600 transition">
-                    Accept
+                  <button className="bg-orange-500 text-white text-xs font-semibold py-1 px-3 rounded-lg hover:bg-orange-600 transition"
+                  onClick={() => navigate(`/detailoforder/${order.Orderid}`)} >
+                    See details
                   </button>
-                )}
               </td>
             </tr>
           ))}
