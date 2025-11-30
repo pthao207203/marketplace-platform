@@ -11,7 +11,6 @@ import {
   USER_DELETED,
 } from "../constants/user.constants";
 
-// ===== Subdocuments =====
 const AddressSchema = new Schema(
   {
     name: { type: String },
@@ -41,14 +40,13 @@ const BankSchema = new Schema(
   { _id: false }
 );
 
-// A single wallet top-up record (user deposited from bank into app)
 const WalletTopUpSchema = new Schema(
   {
     amount: { type: Number, required: true },
     currency: { type: String, default: "VND" },
-    // snapshot of bank details used for this top-up (optional)
+
     bank: { type: BankSchema, default: undefined },
-    transactionId: { type: String }, // optional external bank transfer id / reference
+    transactionId: { type: String },
     status: {
       type: String,
       enum: ["pending", "completed", "failed"],
@@ -59,12 +57,11 @@ const WalletTopUpSchema = new Schema(
   { _id: true, timestamps: false }
 );
 
-// Wallet container: balance and list of top-ups
 const WalletSchema = new Schema(
   {
     balance: { type: Number, default: 0 },
     topups: { type: [WalletTopUpSchema], default: [] },
-    // optional: last time wallet changed (top-up / deduction)
+
     updatedAt: { type: Date },
   },
   { _id: false }
@@ -82,7 +79,6 @@ const CartItemSchema = new Schema(
 
 const CreatedSchema = new Schema(
   {
-    // Object
     by: { type: Schema.Types.ObjectId, ref: "User" },
     at: { type: Date, default: Date.now },
   },
@@ -117,7 +113,6 @@ const SellerRegistrationSchema = new Schema(
   { _id: false, timestamps: false }
 );
 
-// ===== User Schema =====
 const UserSchema = new Schema(
   {
     userName: { type: String, required: true, trim: true },
@@ -158,11 +153,11 @@ const UserSchema = new Schema(
     userAddress: { type: [AddressSchema], default: [] },
     userAvatar: { type: String },
     userCreated: { type: CreatedSchema, default: {} },
-    // user may have multiple bank accounts
+
     userBanks: { type: [BankSchema], default: [] },
     userWallet: { type: WalletSchema, default: {} },
     userRate: { type: Number, default: 0 },
-    // user comments (reviews) left by buyers for this shop/user
+
     userComment: {
       type: [
         new Schema(
@@ -171,7 +166,7 @@ const UserSchema = new Schema(
             rate: { type: Number, required: true, min: 1, max: 5 },
             description: { type: String },
             media: { type: [String], default: [] },
-            // optional reference to the order this review is about
+
             orderId: { type: Schema.Types.ObjectId, ref: "Order" },
             createdAt: { type: Date, default: Date.now },
           },
@@ -180,13 +175,13 @@ const UserSchema = new Schema(
       ],
       default: [],
     },
-    // seller registration (client submits, admin reviews)
+
     sellerRegistration: {
       type: SellerRegistrationSchema,
       default: { status: "none" },
     },
     userCart: { type: [CartItemSchema], default: [] },
-    // Authentication providers linked to this user (google, facebook, ...)
+
     authProviders: {
       type: [
         new Schema(
@@ -208,8 +203,12 @@ const UserSchema = new Schema(
   }
 );
 
-// Tìm kiếm nhanh theo name/mail
 UserSchema.index({ userName: "text", userMail: "text" });
 
-export type UserDoc = InferSchemaType<typeof UserSchema> & { _id: Types.ObjectId }
-export const UserModel = models.User || model('User', UserSchema)
+export type UserDoc = InferSchemaType<typeof UserSchema> & {
+  _id: Types.ObjectId;
+};
+
+export const UserModel = models.User || model("User", UserSchema);
+
+export default UserModel;
