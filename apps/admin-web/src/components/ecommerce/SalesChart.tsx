@@ -1,120 +1,139 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import Chart from "react-apexcharts";
 import type { ApexOptions } from "apexcharts";
+import { FilterParams } from "./Filter";
 
-export default function MonthlySalesChart() {
+interface SalesChartProps {
+  filter: FilterParams;
+}
+
+export default function SalesChart({ filter }: SalesChartProps) {
+
+  const [salesData, setSalesData] = useState<number[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchSales = async () => {
+      try {
+        setLoading(true); 
+
+        const query = new URLSearchParams({
+            type: filter.type,
+            year: filter.year.toString(),
+            ...(filter.month !== undefined && { month: filter.month.toString() }),
+            ...(filter.startDate && { startDate: filter.startDate }),
+            ...(filter.endDate && { endDate: filter.endDate }),
+        }).toString();
+        
+        const API_URL = `/admin/dashboard/monthly-sales?${query}`;
+        
+        const res = await fetch(API_URL, {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include", 
+        });
+
+        if (!res.ok) throw new Error("API Error");
+
+        const json = await res.json();
+        
+        if (json.success) {
+          
+          const data = json.data?.sales || Array(12).fill(0);
+          setSalesData(data);
+        }
+      } catch (error) {
+        console.error("Failed to fetch monthly sales", error);
+        setSalesData(Array(12).fill(0));
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchSales();
+    
+  }, [filter]);
+
   const options: ApexOptions = {
     chart: {
       type: "bar",
-
       toolbar: { show: false },
-      fontFamily: "Inter, system-ui, sans-serif",
+      fontFamily: "Inter, sans-serif",
     },
     plotOptions: {
       bar: {
-        borderRadius: 8,
-        borderRadiusApplication: "end",
-        columnWidth: "58%",
-        colors: {
-          ranges: [{ from: 0, to: 1000, color: "#FFB703" }], // không cần vì dùng gradient
-        },
+        borderRadius: 4,
+        borderRadiusApplication: "end", 
+        columnWidth: "60%", 
       },
     },
-    colors: ["#FFB703"], // màu cột
+    colors: ["#FBBF24"], 
     dataLabels: { enabled: false },
-    grid: { show: false },
+    grid: {
+      show: true,
+      strokeDashArray: 4, 
+      yaxis: { lines: { show: true } },
+      xaxis: { lines: { show: false } },
+      padding: { top: 0, right: 0, bottom: 0, left: 10 },
+    },
     xaxis: {
-      categories: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+      categories: [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", 
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+      ],
       axisBorder: { show: false },
       axisTicks: { show: false },
       labels: {
-        style: { colors: "#6B7280", fontSize: "14px", fontWeight: "normal" },
+        style: { colors: "#9CA3AF", fontSize: "12px", fontWeight: 500 },
       },
     },
     yaxis: {
-      show: false, // ẩn trục Y hoàn toàn
-    },
-    tooltip: { enabled: false },
-    states: {
-      hover: { filter: { type: "none" } },
-      active: { filter: { type: "none" } },
-    },
-
-    // ──────────────────────────────
-    // Đây là phần QUAN TRỌNG: thêm đường line + chấm + số trên đầu
-    // ──────────────────────────────
-    stroke: {
       show: true,
-      curve: "smooth",
-      lineCap: "round",
-      colors: ["#F97316"],
-      width: 2,
+      labels: {
+        style: { colors: "#9CA3AF", fontSize: "12px", fontWeight: 500 },
+        formatter: (val) => val.toFixed(0), 
+        offsetX: -10,
+      },
     },
-    markers: {
-      size: 2,
-      colors: ["#F97316"],
-      hover: { size: 2 },
-    },
-    annotations: {
-      points: [
-        { x: "Jan", y: 30, marker: { size: 0 } },
-        { x: "Feb", y: 50, marker: { size: 0 } },
-        { x: "Mar", y: 90, marker: { size: 0 } },
-        { x: "Apr", y: 100, marker: { size: 0 } },
-        { x: "May", y: 150, marker: { size: 0 } },
-        { x: "Jun", y: 170, marker: { size: 0 } },
-        { x: "Jul", y: 200, marker: { size: 0 } },
-        { x: "Aug", y: 150, marker: { size: 0 } },
-        { x: "Sep", y: 125, marker: { size: 0 } },
-        { x: "Oct", y: 145, marker: { size: 0 } },
-        { x: "Nov", y: 160, marker: { size: 0 } },
-        { x: "Dec", y: 165, marker: { size: 0 } },
-      ].map((item) => ({
-        x: item.x,
-        y: item.y,
-        marker: { size: 0 },
-        label: {
-          borderColor: "transparent",
-          offsetY: -10,
-          style: { background: "transparent", color: "#F97316", fontSize: "14px", fontWeight: "noraml" },
-          text: item.y.toString(),
-        },
-      })),
+    tooltip: {
+      enabled: true,
+      y: {
+        formatter: (val) => `${val} Triệu VND`, 
+      },
     },
   };
 
   const series = [
     {
       name: "Doanh thu",
-      type: "column",
-      data: [30, 50, 90, 100, 150, 170, 200, 150, 125, 145, 160, 165],
-    },
-    {
-      name: "Trend",
-      type: "line",
-      data: [30, 50, 90, 100, 150, 170, 200, 150, 125, 145, 160, 165],
-      legend: {
-        show: true,
-        markers: {
-          fillColors: ["#FFB703", "#F97316"] // cột vàng + line cam
-        }
-      }
+      data: salesData,
     },
   ];
 
-  return (
-    <div className="w-auto h-full flex flex-col bg-white rounded-xl px-[30px] py-[20px] border border-gray-200">
-      <h3 className="text-[18px] max-md:text-[16px] font-normal text-[#441A02]">
-        Biểu đồ thống kê doanh thu (trăm triệu VND)
-      </h3>
+  if (loading) {
+    return (
+      <div className="w-auto h-full flex items-center justify-center bg-white rounded-xl border border-gray-200 min-h-[350px] animate-pulse">
+        <span className="text-gray-400 font-medium">Đang tải dữ liệu...</span>
+      </div>
+    );
+  }
 
-      <div className="mt-[30px] h-auto">
-        <Chart options={options} series={series} type="line" />
+  return (
+    <div className="w-auto h-full flex flex-col bg-white rounded-xl px-[20px] py-[20px] border border-gray-200 shadow-sm">
+      <div className="mb-6">
+        <h3 className="text-[18px] max-md:text-[16px] font-bold text-[#441A02]">
+          Biểu đồ thống kê doanh thu
+        </h3>
+        <p className="text-sm text-gray-500 mt-1">
+          Đơn vị tính: Triệu VNĐ
+        </p>
       </div>
 
-      <h3 className="mt-[30px] text-[14px] max-md:text-[12px]  text-[#441A02]">
-        Doanh thu tăng nhanh vào đầu năm, từ tháng 1 đến tháng 7. Sau đó tụt
-        dốc khoảng 2 tháng và tiếp tục tăng đều.
-      </h3>
+      <div className="h-[300px] w-full">
+        <Chart options={options} series={series} type="bar" height="100%" />
+      </div>
     </div>
   );
 }
