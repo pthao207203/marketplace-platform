@@ -52,6 +52,34 @@ export async function getProducts(req: Request, res: Response) {
       const shopId = user && user.sub ? String(user.sub) : null;
       const { page, pageSize, skip, limit } = parsePaging(req.query);
       const filter: any = { productShopId: shopId };
+      // allow shop to filter by priceType and deleted via query params
+      try {
+        const q: any = req.query || {};
+        if (typeof q.priceType !== "undefined" && q.priceType !== null) {
+          const s = String(q.priceType);
+          if (s.includes(",")) {
+            const arr = s
+              .split(",")
+              .map((x: string) => Number(x))
+              .filter((n: number) => !Number.isNaN(n));
+            if (arr.length) filter.productPriceType = { $in: arr };
+          } else {
+            const n = Number(s);
+            if (!Number.isNaN(n)) filter.productPriceType = n;
+          }
+        }
+        if (typeof q.deleted !== "undefined" && q.deleted !== null) {
+          const d = String(q.deleted).toLowerCase();
+          if (d === "true" || d === "1") filter.productDeleted = 1;
+          else if (d === "false" || d === "0") filter.productDeleted = 0;
+          else {
+            const nd = Number(d);
+            if (!Number.isNaN(nd)) filter.productDeleted = nd;
+          }
+        }
+      } catch (e) {
+        // ignore parse errors
+      }
       const [items, total] = await Promise.all([
         ProductModel.find(filter)
           .sort({ createdAt: -1 })
@@ -60,7 +88,63 @@ export async function getProducts(req: Request, res: Response) {
           .lean(),
         ProductModel.countDocuments(filter),
       ]);
-      return sendSuccess(res, { items, page, pageSize, total });
+      // Enrich auction products: fetch auctions for items that reference auctions
+      const auctionIds = (items || [])
+        .map((p: any) => p.productAuction && p.productAuction.auctionId)
+        .filter(Boolean);
+      const auctionsMap: Record<string, any> = {};
+      if (auctionIds.length) {
+        const auctions = await AuctionModel.find({
+          _id: { $in: auctionIds },
+        }).lean();
+        for (const a of auctions) auctionsMap[String(a._id)] = a;
+      }
+
+      // map to compact DTO
+      const mapped = (items || []).map((p: any) => {
+        const isAuction =
+          typeof p.productPriceType === "number" && p.productPriceType === 3;
+        let price =
+          typeof p.productPrice === "number"
+            ? p.productPrice
+            : p.productAuction?.startingPrice ?? 0;
+        let auctionEndsAt: string | undefined = undefined;
+        if (isAuction && p.productAuction?.auctionId) {
+          const a = auctionsMap[String(p.productAuction.auctionId)];
+          if (a) {
+            if (typeof a.currentPrice === "number") price = a.currentPrice;
+            if (a.endsAt) auctionEndsAt = new Date(a.endsAt).toISOString();
+          }
+        }
+
+        return {
+          id: String(p._id),
+          name: p.productName ?? p.title ?? "",
+          createdAt: p.createdAt
+            ? new Date(p.createdAt).toISOString()
+            : undefined,
+          quantity:
+            typeof p.productQuantity === "number"
+              ? p.productQuantity
+              : p.quantity ?? 1,
+          price,
+          thumbnail: Array.isArray(p.productMedia)
+            ? p.productMedia[0] ?? null
+            : p.productMedia ?? null,
+          priceType:
+            typeof p.productPriceType === "number"
+              ? p.productPriceType === 1
+                ? "Giá cố định"
+                : p.productPriceType === 2
+                ? "Thương lượng"
+                : p.productPriceType === 3
+                ? "Đấu giá"
+                : String(p.productPriceType)
+              : undefined,
+          auctionEndsAt,
+        };
+      });
+      return sendSuccess(res, { items: mapped, page, pageSize, total });
     }
 
     return sendError(res, 403, "Insufficient privileges");
@@ -159,7 +243,10 @@ export async function getProductDetail(req: Request, res: Response) {
         : p.productMedia
         ? [p.productMedia]
         : [],
-      price: typeof p.productPrice === "number" ? p.productPrice : 0,
+      price:
+        typeof p.productPrice === "number"
+          ? p.productPrice
+          : p.productAuction?.startingPrice ?? 0,
       currency: "VND" as const,
       quantity:
         typeof p.productQuantity === "number"
@@ -176,6 +263,40 @@ export async function getProductDetail(req: Request, res: Response) {
           ? p.originProof
           : p.productHasOrigin
           ? { images: Array.isArray(p.productMedia) ? p.productMedia : [] }
+          : undefined,
+      originUrl: Array.isArray(p.productMedia)
+        ? p.productMedia[0] ?? null
+        : p.productMedia ?? null,
+      conditionNote: p.productConditionNote ?? undefined,
+      newPercent:
+        typeof p.productNewPercent === "number"
+          ? p.productNewPercent
+          : undefined,
+      damagePercent:
+        typeof p.productDamagePercent === "number"
+          ? p.productDamagePercent
+          : undefined,
+      warrantyMonths:
+        typeof p.productWarrantyMonths === "number"
+          ? p.productWarrantyMonths
+          : undefined,
+      returnPolicy:
+        typeof p.productReturnPolicy === "boolean"
+          ? p.productReturnPolicy
+          : undefined,
+      hasOrigin:
+        typeof p.productHasOrigin === "boolean"
+          ? p.productHasOrigin
+          : undefined,
+      priceTypeLabel:
+        typeof p.productPriceType === "number"
+          ? p.productPriceType === 1
+            ? "Giá cố định"
+            : p.productPriceType === 2
+            ? "Thương lượng"
+            : p.productPriceType === 3
+            ? "Đấu giá"
+            : String(p.productPriceType)
           : undefined,
     };
 
