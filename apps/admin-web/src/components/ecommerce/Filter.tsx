@@ -1,8 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { Calendar } from "lucide-react";
-import { format } from "date-fns";
 
 type FilterType = "day" | "month" | "year";
 
