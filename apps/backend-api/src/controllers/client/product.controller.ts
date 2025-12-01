@@ -18,6 +18,7 @@ import { findCategoriesSorted } from "../../services/category.service";
 import { ProductModel, IProduct } from "../../models/product.model"; // Import IProduct
 import { BrandModel } from "../../models/brand.model";
 import { UserModel } from "../../models/user.model";
+import { Types } from "mongoose";
 
 export async function getHome(req: Request, res: Response) {
   try {
@@ -194,6 +195,270 @@ export async function getHome(req: Request, res: Response) {
   }
 }
 
+// GET /api/product?page=&pageSize=&name=&city=&rating=&priceMin=&priceMax=&priceType=&categoryId=
+export async function getProducts(req: Request, res: Response) {
+  try {
+    const { page, pageSize, skip, limit } = parsePaging(req.query);
+
+    const q: any = req.query || {};
+    const name = q.name ? String(q.name).trim() : undefined;
+    // helper to parse multi-valued query params: repeated or comma-separated
+    const parseMulti = (val: any): string[] => {
+      if (typeof val === "undefined" || val === null) return [];
+      if (Array.isArray(val))
+        return val
+          .flatMap((v) => String(v).split(","))
+          .map((s) => s.trim())
+          .filter(Boolean);
+      return String(val)
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+    };
+
+    const cities = parseMulti(q.city);
+    const ratingsRaw = parseMulti(q.rating)
+      .map((v) => Number(v))
+      .filter((n) => !Number.isNaN(n));
+    const priceMin =
+      typeof q.priceMin !== "undefined" ? Number(q.priceMin) : undefined;
+    const priceMax =
+      typeof q.priceMax !== "undefined" ? Number(q.priceMax) : undefined;
+    const priceTypes = parseMulti(q.priceType)
+      .map((v) => Number(v))
+      .filter((n) => !Number.isNaN(n));
+    const categoryIds = parseMulti(q.categoryId);
+    const brandIds = parseMulti(q.brandId);
+    // support newPercent filter: single values, comma-separated, or ranges like 60-80
+    const newPercentRaw = parseMulti(q.newPercent);
+    const newPercentRanges: Array<{ min: number; max: number }> = [];
+    for (const np of newPercentRaw) {
+      if (!np) continue;
+      const rangeMatch = String(np).match(/^(\d+)(-(\d+))?$/);
+      if (rangeMatch) {
+        const min = Number(rangeMatch[1]);
+        const max = rangeMatch[3] ? Number(rangeMatch[3]) : 100;
+        if (!Number.isNaN(min) && !Number.isNaN(max)) {
+          const mn = Math.max(0, Math.min(100, min));
+          const mx = Math.max(0, Math.min(100, max));
+          newPercentRanges.push({
+            min: Math.min(mn, mx),
+            max: Math.max(mn, mx),
+          });
+        }
+      } else {
+        const v = Number(np);
+        if (!Number.isNaN(v))
+          newPercentRanges.push({
+            min: Math.max(0, Math.min(100, v)),
+            max: 100,
+          });
+      }
+    }
+
+    // build aggregation pipeline
+    const match: any = {
+      productDeleted: { $ne: 1 },
+      productStatus: { $ne: 0 },
+      productQuantity: { $gt: 0 },
+    };
+
+    if (name) {
+      match.productName = { $regex: new RegExp(name, "i") };
+    }
+    if (priceTypes && priceTypes.length) {
+      match.productPriceType = { $in: priceTypes };
+    }
+    if (categoryIds && categoryIds.length) {
+      const objIds: any[] = [];
+      for (const cid of categoryIds) {
+        try {
+          objIds.push(new Types.ObjectId(cid));
+        } catch (e) {
+          // ignore invalid id
+        }
+      }
+      if (objIds.length) match.productCategory = { $in: objIds };
+    }
+
+    if (newPercentRanges.length) {
+      const orClauses: any[] = newPercentRanges.map((r) => ({
+        productNewPercent: { $gte: r.min, $lte: r.max },
+      }));
+      if (orClauses.length) {
+        if (match.$or) match.$or = match.$or.concat(orClauses);
+        else match.$or = orClauses;
+      }
+    }
+
+    // price range handled via $or after lookup (to include auction startingPrice)
+
+    const pipeline: any[] = [{ $match: match }];
+
+    // lookup seller
+    pipeline.push({
+      $lookup: {
+        from: "users",
+        localField: "productShopId",
+        foreignField: "_id",
+        as: "seller",
+      },
+    });
+    pipeline.push({
+      $unwind: { path: "$seller", preserveNullAndEmptyArrays: true },
+    });
+
+    if (cities && cities.length) {
+      pipeline.push({
+        $match: {
+          "seller.sellerRegistration.pickupAddress.city": { $in: cities },
+        },
+      });
+    }
+
+    if (ratingsRaw && ratingsRaw.length) {
+      if (ratingsRaw.length === 1) {
+        const r = ratingsRaw[0];
+        const lower = Math.max(0, r - 0.5);
+        const upper = Math.min(5, r + 0.5);
+        pipeline.push({
+          $match: { "seller.userRate": { $gte: lower, $lte: upper } },
+        });
+      } else {
+        const orClauses: any[] = [];
+        for (const r of ratingsRaw) {
+          const lower = Math.max(0, r - 0.5);
+          const upper = Math.min(5, r + 0.5);
+          orClauses.push({ "seller.userRate": { $gte: lower, $lte: upper } });
+        }
+        pipeline.push({ $match: { $or: orClauses } });
+      }
+    }
+
+    // brand filter (supports multiple values)
+    if (brandIds && brandIds.length) {
+      const bIds: any[] = [];
+      for (const bid of brandIds) {
+        try {
+          bIds.push(new Types.ObjectId(bid));
+        } catch (e) {}
+      }
+      if (bIds.length) match.productBrand = { $in: bIds };
+    }
+
+    // name already applied; price range: match either productPrice or productAuction.startingPrice
+    if (typeof priceMin === "number" || typeof priceMax === "number") {
+      const priceCond: any = { $or: [] };
+      const min = typeof priceMin === "number" ? priceMin : 0;
+      const max =
+        typeof priceMax === "number" ? priceMax : Number.MAX_SAFE_INTEGER;
+      priceCond.$or.push({ productPrice: { $gte: min, $lte: max } });
+      priceCond.$or.push({
+        "productAuction.startingPrice": { $gte: min, $lte: max },
+      });
+      pipeline.push({ $match: priceCond });
+    }
+
+    // project useful fields and compute price/thumbnail
+    pipeline.push({
+      $project: {
+        productName: 1,
+        productPrice: 1,
+        productPriceType: 1,
+        productMedia: 1,
+        productCategory: 1,
+        productBrand: 1,
+        productQuantity: 1,
+        productAuction: 1,
+        seller: {
+          _id: "$seller._id",
+          userAvatar: "$seller.userAvatar",
+          sellerRegistration: "$seller.sellerRegistration",
+          userRate: "$seller.userRate",
+        },
+        avgRating: {
+          $cond: [
+            { $gt: [{ $size: "$productReview" }, 0] },
+            { $avg: "$productReview.rating" },
+            null,
+          ],
+        },
+      },
+    });
+
+    // apply name regex again post-lookup for safety if needed (already matched earlier)
+
+    // sort, paginate and facet to get total
+    pipeline.push({ $sort: { createdAt: -1 } });
+    pipeline.push({
+      $facet: {
+        items: [{ $skip: skip }, { $limit: limit }],
+        totalCount: [{ $count: "count" }],
+      },
+    });
+
+    const aggRes = await ProductModel.aggregate(pipeline).exec();
+    const itemsRaw =
+      aggRes && aggRes[0] && aggRes[0].items ? aggRes[0].items : [];
+    const total =
+      aggRes && aggRes[0] && aggRes[0].totalCount && aggRes[0].totalCount[0]
+        ? aggRes[0].totalCount[0].count
+        : 0;
+
+    console.log("Mapped items:", itemsRaw);
+    // map to response DTO
+    const items = itemsRaw.map((p: any) => {
+      const price =
+        typeof p.productPrice === "number"
+          ? p.productPrice
+          : p.productAuction?.startingPrice ?? 0;
+      const thumbnail = Array.isArray(p.productMedia)
+        ? p.productMedia[0] ?? null
+        : p.productMedia ?? null;
+      const pickup = p.seller?.sellerRegistration?.pickupAddress;
+      const pickupCity = pickup?.city ?? undefined;
+      const avgRating =
+        typeof p.avgRating === "number"
+          ? Math.round(p.avgRating * 10) / 10
+          : undefined;
+      return {
+        id: String(p._id),
+        name: p.productName ?? "",
+        price,
+        priceType: p.productPriceType,
+        thumbnail,
+        quantity: typeof p.productQuantity === "number" ? p.productQuantity : 1,
+        categoryId: p.productCategory ? String(p.productCategory) : undefined,
+        brandId: p.productBrand ? String(p.productBrand) : undefined,
+        seller: p.seller
+          ? {
+              id: p.seller._id ? String(p.seller._id) : undefined,
+              pickupCity,
+              userRate:
+                typeof p.seller.userRate === "number"
+                  ? p.seller.userRate
+                  : undefined,
+            }
+          : undefined,
+        averageRating: avgRating,
+      };
+    });
+
+    // also return categories for filtering
+    const categoriesDocs = await findCategoriesSorted();
+    const categories = categoriesDocs.map((c: any) => ({
+      id: String(c._id),
+      name: c.name,
+      icon: c.icon,
+    }));
+
+    return sendSuccess(res, { items, page, pageSize, total, categories });
+  } catch (err: any) {
+    console.error("getProducts error", err);
+    return sendError(res, 500, "Internal error");
+  }
+}
+
 export async function getProductDetail(req: Request, res: Response) {
   try {
     const id = req.params.id;
@@ -272,7 +537,20 @@ export async function getProductDetail(req: Request, res: Response) {
         typeof p.productHasOrigin === "boolean"
           ? p.productHasOrigin
           : undefined,
-      originLink: p.productOriginLink ?? undefined,
+      originLink: (() => {
+        // description from stored origin link (if any)
+        const description = p.productOriginLink?.description ?? undefined;
+        // always return url as array (may be empty)
+        let urls: string[] = [];
+        if (Array.isArray(p.productMedia) && p.productMedia.length) {
+          urls = p.productMedia;
+        } else if (typeof p.productMedia === "string" && p.productMedia) {
+          urls = [p.productMedia];
+        } else if (p.productOriginLink && p.productOriginLink.url) {
+          urls = [p.productOriginLink.url];
+        }
+        return { description, url: urls };
+      })(),
       originProof:
         p.originProof && Object.keys(p.originProof).length
           ? p.originProof
