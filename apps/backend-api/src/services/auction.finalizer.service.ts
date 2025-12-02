@@ -1,29 +1,30 @@
+// apps/backend-api/src/services/auction.finalizer.service.ts
 import { AuctionModel } from "../models/auction.model";
 import OrderModel from "../models/order.model";
+import { ProductModel } from '../models/product.model';
 import { UserModel } from "../models/user.model";
-import mongoose from "mongoose";
-import {
-  PAYMENT_METHOD,
-  ORDER_STATUS,
-  PAYMENT_STATUS,
-} from "../constants/order.constants";
+import { Types } from 'mongoose';
 
 /**
  * Find auctions that ended and are still pending finalization.
- * For each auction: determine winner (last bid), create an order charged to winner's wallet,
- * and update auction.finalState atomically. This function is idempotent: it marks auctions as processing
- * before attempting payment so repeated runs don't double-charge.
+ * NEW LOGIC: Just mark the winner, don't create order yet.
+ * Winner will need to confirm shipping address, then order is created.
  */
 export async function finalizeEndedAuctions(limit = 20) {
   const now = new Date();
 
-  // find candidate auctions: ended and still pending
+  // Find candidate auctions: ended and still pending (treat missing finalState as pending)
   const candidates = await AuctionModel.find({
     endsAt: { $lte: now },
-    finalState: "pending",
+    $or: [
+      { finalState: "pending" },
+      { finalState: { $exists: false } },
+      { finalState: null },
+    ],
   })
     .limit(limit)
     .lean();
+    
   if (!candidates || !candidates.length) return { processed: 0 };
 
   let processed = 0;
@@ -36,150 +37,162 @@ export async function finalizeEndedAuctions(limit = 20) {
   return { processed };
 }
 
-// --- process single auction (extracted for reuse) -------------------------
+// Process single auction: determine winner and mark auction
 async function processAuction(a: any) {
   const auctionId = String(a._id);
 
-  // attempt to mark as 'processing' to claim this worker
+  // Attempt to mark as 'processing' to claim this worker (accept missing finalState)
   const claimed = await AuctionModel.updateOne(
-    { _id: auctionId, finalState: "pending" },
+    {
+      _id: auctionId,
+      $or: [
+        { finalState: "pending" },
+        { finalState: { $exists: false } },
+        { finalState: null },
+      ],
+    },
     { $set: { finalState: "processing" } }
   );
-  if (!claimed.matchedCount) return false; // someone else claimed it
+  
+  if (!claimed.matchedCount) return false; // Someone else claimed it
 
   try {
     const bids = Array.isArray(a.bidHistory) ? a.bidHistory : [];
-    if (!bids.length) {
-      // no bids -> mark as no_bids
-      await AuctionModel.updateOne(
-        { _id: auctionId },
-        { $set: { finalState: "no_bids", finalizedAt: new Date() } }
-      );
-      return true;
-    }
 
-    const lastBid = bids[bids.length - 1];
-    const winnerId = String(lastBid.userId);
-    const finalPrice = lastBid.amount;
+    // Prefer finalWinnerId/finalPrice when present (handles manually-inserted auctions)
+    let winnerId: string | null = a.finalWinnerId ? String(a.finalWinnerId) : null;
+    let finalPrice: number | null = a.finalPrice !== undefined && a.finalPrice !== null ? Number(a.finalPrice) : null;
 
-    const orderDoc: any = {
-      orderBuyerId: winnerId,
-      orderSellerIds: [],
-      orderItems: [
-        {
-          productId: null,
-          name: a.title || "Auction item",
-          imageUrl: a.imageUrl || "",
-          price: finalPrice,
-          qty: a.quantity || 1,
-          shopId: null,
-          lineTotal: finalPrice * (a.quantity || 1),
-        },
-      ],
-      orderSubtotal: finalPrice * (a.quantity || 1),
-      orderShippingFee: 0,
-      orderTotalAmount: finalPrice * (a.quantity || 1),
-
-      orderStatus: ORDER_STATUS.PENDING,
-      orderPaymentMethod: PAYMENT_METHOD.WALLET,
-      orderPaymentStatus: PAYMENT_STATUS.PENDING,
-
-      orderShippingAddress: null,
-      orderNote: `Order created from auction ${auctionId}`,
-      orderPaymentReference: `AUCTION-${auctionId}`,
-    };
-
-    // transaction: create order + deduct winner wallet atomically
-    const session = await mongoose.startSession();
-    try {
-      await session.withTransaction(async () => {
-        await OrderModel.create([orderDoc], { session });
-
-        // conditional deduction
-        const res = await UserModel.updateOne(
-          {
-            _id: winnerId,
-            "userWallet.balance": { $gte: orderDoc.orderTotalAmount },
-          },
-          {
-            $inc: { "userWallet.balance": -orderDoc.orderTotalAmount },
-            $push: {
-              "userWallet.topups": {
-                amount: -orderDoc.orderTotalAmount,
-                currency: "VND",
-                transactionId: orderDoc.orderPaymentReference,
-                status: "completed",
-                createdAt: new Date(),
-              },
-            },
-            $set: { "userWallet.updatedAt": new Date() },
-          },
-          { session }
-        ).exec();
-
-        if (!res.matchedCount && !res.modifiedCount) {
-          // payment failed due to insufficient funds
-          throw new Error("INSUFFICIENT_FUNDS");
-        }
-
-        // mark auction as paid
+    if (!winnerId || !finalPrice) {
+      if (!bids.length) {
+        // No bids -> mark as no_bids
         await AuctionModel.updateOne(
           { _id: auctionId },
-          {
-            $set: {
-              finalState: "paid",
-              finalWinnerId: winnerId,
-              finalPrice,
-              finalizedAt: new Date(),
-            },
-          },
-          { session }
-        );
-      });
-
-      return true;
-    } catch (err) {
-      // if the DB transaction threw INSUFFICIENT_FUNDS, mark auction as payment_failed
-      const msg = (err && (err as any).message) || "";
-      if (msg.includes("INSUFFICIENT_FUNDS")) {
-        await AuctionModel.updateOne(
-          { _id: auctionId },
-          {
-            $set: {
-              finalState: "payment_failed",
-              finalizedAt: new Date(),
-              finalPrice,
-            },
+          { 
+            $set: { 
+              finalState: "no_bids", 
+              finalizedAt: new Date() 
+            } 
           }
         );
         return true;
       }
 
-      // revert claim so another worker can attempt later
+      // Find highest bid (winner)
+      const sortedBids = [...bids].sort((x: any, y: any) => {
+        const xAmt = typeof x.amount === 'number' ? x.amount : Number(x.amount);
+        const yAmt = typeof y.amount === 'number' ? y.amount : Number(y.amount);
+        return yAmt - xAmt;
+      });
+      const winningBid = sortedBids[0];
+      if (!winnerId) winnerId = String(winningBid.userId);
+      if (!finalPrice) finalPrice = Number(winningBid.amount);
+    }
+
+    // Find the product being auctioned
+    const product = await ProductModel.findOne({ 'productAuction.auctionId': a._id }).lean();
+    const prod: any = product as any;
+    if (!prod) {
       await AuctionModel.updateOne(
         { _id: auctionId },
-        { $set: { finalState: "pending" } }
+        { $set: { finalState: 'error', finalizedAt: new Date() } }
       );
+      console.error(`Auction ${auctionId} error: product not found`);
       return false;
-    } finally {
-      session.endSession();
     }
-  } catch (outerErr) {
-    console.error("processAuction error for", auctionId, outerErr);
-    // try to revert claim
+
+    // Find the winner user and their default address
+    const user = await UserModel.findById(winnerId).lean();
+    if (!user) {
+      await AuctionModel.updateOne(
+        { _id: auctionId },
+        { $set: { finalState: 'error', finalizedAt: new Date() } }
+      );
+      console.error(`Auction ${auctionId} error: winner user not found`);
+      return false;
+    }
+    const addressList = ((user as any).userAddress || []);
+    const address = addressList.find((a: any) => a.isDefault) || addressList[0];
+    if (!address) {
+      await AuctionModel.updateOne(
+        { _id: auctionId },
+        { $set: { finalState: 'error', finalizedAt: new Date() } }
+      );
+      console.error(`Auction ${auctionId} error: winner has no address`);
+      return false;
+    }
+
+    // Compose the order document as requested
+    const nowDate = new Date();
+    const orderDoc: any = {
+      orderBuyerId: new Types.ObjectId(winnerId),
+      orderSellerIds: prod.productShopId ? [new Types.ObjectId(prod.productShopId)] : [],
+      orderItems: [
+        {
+          productId: new Types.ObjectId(prod._id),
+          name: prod.productName,
+          imageUrl: Array.isArray(prod.productMedia) && prod.productMedia.length ? prod.productMedia[0] : prod.imageUrl,
+          price: finalPrice,
+          qty: a.quantity || 1,
+          shopId: prod.productShopId ? new Types.ObjectId(prod.productShopId) : undefined,
+          lineTotal: finalPrice * (a.quantity || 1),
+        }
+      ],
+      orderSubtotal: finalPrice,
+      orderShippingFee: 30000,
+      orderTotalAmount: finalPrice + 30000,
+      orderStatus: 0, // PENDING (chưa giao)
+      orderPaymentMethod: 'wallet',
+      orderPaymentStatus: 'pending',
+      orderShippingAddress: {
+        name: address.name,
+        phone: address.phone,
+        label: address.label,
+        country: address.country,
+        province: address.province,
+        ward: address.ward,
+        street: address.street,
+        location: address.location,
+      },
+      orderNote: undefined,
+      createdAt: a.finalizedAt ? new Date(a.finalizedAt) : nowDate,
+      updatedAt: nowDate,
+    };
+
+    // Insert the order
+    const inserted = await OrderModel.create(orderDoc);
+
+    // Mark auction as finalized
+    await AuctionModel.updateOne(
+      { _id: auctionId },
+      {
+        $set: {
+          finalState: 'finalized',
+          finalWinnerId: winnerId,
+          finalPrice: finalPrice,
+          finalizedAt: nowDate,
+        },
+      }
+    );
+
+    console.log(`Auction ${auctionId} finalized: winner=${winnerId}, price=${finalPrice}, order=${inserted._id}`);
+    return true;
+  } catch (err) {
+    console.error("processAuction error for", auctionId, err);
+    // Try to revert claim
     try {
       await AuctionModel.updateOne(
         { _id: auctionId },
         { $set: { finalState: "pending" } }
       );
     } catch (e) {
-      // ignore
+      // Ignore
     }
     return false;
   }
 }
 
-// --- scheduling helpers ---------------------------------------------------
+// --- Scheduling helpers ---------------------------------------------------
 const timers: Record<string, NodeJS.Timeout> = {};
 
 export async function scheduleAuctionTimer(auctionId: string, when: Date) {
@@ -187,7 +200,7 @@ export async function scheduleAuctionTimer(auctionId: string, when: Date) {
   const runAt = when.getTime();
   const ms = Math.max(0, runAt - now);
 
-  // clear existing
+  // Clear existing
   if (timers[auctionId]) clearTimeout(timers[auctionId]);
 
   timers[auctionId] = setTimeout(async () => {
@@ -203,13 +216,18 @@ export async function scheduleAuctionTimer(auctionId: string, when: Date) {
 }
 
 export async function startScheduler(scanWindowSec = 3600) {
-  // schedule auctions that end within next scanWindowSec seconds
+  // Schedule auctions that end within next scanWindowSec seconds
   const now = new Date();
   const until = new Date(now.getTime() + scanWindowSec * 1000);
   const docs = await AuctionModel.find({
     endsAt: { $gte: now, $lte: until },
-    finalState: "pending",
+    $or: [
+      { finalState: "pending" },
+      { finalState: { $exists: false } },
+      { finalState: null },
+    ],
   }).lean();
+  
   for (const d of docs) {
     await scheduleAuctionTimer(String(d._id), new Date(d.endsAt));
   }

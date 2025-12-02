@@ -8,17 +8,27 @@ import {
   getAuctions,
   placeBid,
   getAuctionById,
+  getParticipatedAuctions,
+  getSuccessfulAuctions,
+  getFailedAuctions,
 } from "../../controllers/client/auction.controller";
 import { createNegotiationHandler } from "../../controllers/client/negotiation.controller";
 import { requireClientAuth } from "../../middlewares/auth.middleware";
 
 const router = Router();
+
+// Home route
 router.get("/home", getHome);
-router.get("/", getProducts);
-router.get("/:id", getProductDetail);
+router.get("/auctions/participated", requireClientAuth, getParticipatedAuctions);
+router.get("/auctions/successful", requireClientAuth, getSuccessfulAuctions);
+router.get("/auctions/failed", requireClientAuth, getFailedAuctions);
 router.get("/auctions", getAuctions);
 router.get("/auctions/:id", getAuctionById);
 router.post("/auctions/:id/bid", requireClientAuth, placeBid);
+
+
 router.post("/negotiate/:id/buy", requireClientAuth, createNegotiationHandler);
+router.get("/", getProducts);
+router.get("/:id", getProductDetail);
 
 export default router;
