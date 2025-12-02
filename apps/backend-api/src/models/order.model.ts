@@ -6,7 +6,7 @@ import {
 } from "../constants/order.constants";
 
 export interface IOrderItem {
-  productId: Types.ObjectId;
+  productId?: Types.ObjectId | null;
   name?: string;
   imageUrl?: string;
   price: number;
@@ -65,7 +65,7 @@ export interface IOrder extends Document {
 // Sub-schemas
 const OrderItemSchema = new Schema<IOrderItem>(
   {
-    productId: { type: Schema.Types.ObjectId, ref: "Product", required: true },
+    productId: { type: Schema.Types.ObjectId, ref: "Product", required: false },
     name: { type: String },
     imageUrl: { type: String },
     price: { type: Number, required: true },

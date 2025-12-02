@@ -2,7 +2,7 @@ import { Schema, model, models, Types } from "mongoose";
 
 const ConversationSchema = new Schema(
   {
-    participants: { type: [Types.ObjectId], ref: "User", required: true, index: true },
+    participants: { type: [Types.ObjectId], ref: "User", required: true },
     title: { type: String },
     metadata: { type: Schema.Types.Mixed },
   },
