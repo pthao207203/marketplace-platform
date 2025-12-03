@@ -160,5 +160,7 @@ const OrderSchema = new Schema<IOrder>(
 
 OrderSchema.index({ orderBuyerId: 1, orderTotalAmount: -1 });
 
+OrderSchema.index({ orderSellerIds: 1, orderStatus: 1 });
+
 export const OrderModel = models.Order || model<IOrder>("Order", OrderSchema);
 export default OrderModel;

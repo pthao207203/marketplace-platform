@@ -14,61 +14,36 @@ import cloudinaryRoute from "./cloudinary.route";
 
 import {
   requireAdminAuth,
-  requireClientAuth,
   requireShopOrAdminAuth,
 } from "../../middlewares/auth.middleware";
 
-const routeAdmin = (app: Application) => {};
-
-module.exports = (app: Application) => {
+const routeAdmin = (app: Application) => {
   const adminMiddlewares = [requireAdminAuth];
   const shopOrAdminMiddlewares = [requireShopOrAdminAuth];
+
+  const adminPrefix = systemConfig.prefixAdmin || "/admin";
+
+  app.use(`/api${adminPrefix}/auth`, authRoute);
+
+  app.use("/api/shops", shopOrAdminMiddlewares, orderRoute);
+
+  app.use("/api/orders", shopOrAdminMiddlewares, orderRoute);
+
   app.use(
-    systemConfig.prefixAdmin + `/dashboard`,
-    [requireShopOrAdminAuth],
-    dashboardRoute
-  );
-  app.use(systemConfig.prefixAdmin + `/auth`, authRoute);
-  app.use(
-    systemConfig.prefixAdmin + `/products`,
-    [requireShopOrAdminAuth],
-    productRoute
-  );
-  app.use(
-    systemConfig.prefixAdmin + `/orders`,
-    [requireShopOrAdminAuth],
-    orderRoute
-  );
-  app.use(
-    systemConfig.prefixAdmin + `/dashboard`,
+    `/api${adminPrefix}/dashboard`,
     shopOrAdminMiddlewares,
     dashboardRoute
   );
-  app.use(systemConfig.prefixAdmin + `/auth`, authRoute);
-  app.use(
-    systemConfig.prefixAdmin + `/products`,
-    shopOrAdminMiddlewares,
-    productRoute
-  );
-  app.use(
-    systemConfig.prefixAdmin + `/orders`,
-    shopOrAdminMiddlewares,
-    orderRoute
-  );
-  app.use(
-    systemConfig.prefixAdmin + `/users`,
-    adminMiddlewares,
-    userAdminRoute
-  );
-  app.use(
-    systemConfig.prefixAdmin + `/categories`,
-    adminMiddlewares,
-    categoryRoute
-  );
-  app.use(systemConfig.prefixAdmin + `/brands`, adminMiddlewares, brandRoute);
-  app.use(systemConfig.prefixAdmin + `/system`, adminMiddlewares, systemRoute);
-  app.use(systemConfig.prefixAdmin + `/pay`, adminMiddlewares, payRoute);
-  app.use(systemConfig.prefixAdmin + `/cloudinary`, cloudinaryRoute);
+  app.use(`/api${adminPrefix}/products`, shopOrAdminMiddlewares, productRoute);
+
+  app.use(`/api${adminPrefix}/categories`, adminMiddlewares, categoryRoute);
+  app.use(`/api${adminPrefix}/brands`, adminMiddlewares, brandRoute);
+  app.use(`/api${adminPrefix}/system`, adminMiddlewares, systemRoute);
+  app.use(`/api${adminPrefix}/users`, adminMiddlewares, userAdminRoute);
+  app.use(`/api${adminPrefix}/pay`, adminMiddlewares, payRoute);
+  app.use(`/api${adminPrefix}/cloudinary`, cloudinaryRoute);
 };
 
 export default routeAdmin;
+
+module.exports = routeAdmin;
