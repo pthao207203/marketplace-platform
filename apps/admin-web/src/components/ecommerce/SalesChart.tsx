@@ -111,7 +111,7 @@ export default function MonthlySalesChart() {
         <Chart options={options} series={series} type="line" />
       </div>
 
-      <h3 className="mt-[30px] text-[14px] max-md:text-[12px] max-md:text-[14px] text-[#441A02]">
+      <h3 className="mt-[30px] text-[14px] max-md:text-[12px]  text-[#441A02]">
         Doanh thu tăng nhanh vào đầu năm, từ tháng 1 đến tháng 7. Sau đó tụt
         dốc khoảng 2 tháng và tiếp tục tăng đều.
       </h3>
