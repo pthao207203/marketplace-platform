@@ -1,5 +1,5 @@
 import "dotenv/config";
-import express, { type Application } from "express";
+import express, { Application } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import * as database from "./config/database";
@@ -7,9 +7,8 @@ import * as database from "./config/database";
 import routeAdmin from "./routes/admin/index.route";
 import routeClient from "./routes/client/index.route";
 
-import trackingWebhook from "./routes/webhook/trackingmore.route";
-
 import * as finalizer from "./services/auction.finalizer.service";
+const trackingWebhook = require("./routes/webhook/trackingmore.route").default;
 
 const app: Application = express();
 
@@ -19,7 +18,7 @@ app.use(express.json());
 const whitelist = [
   "http://localhost:3000", // Frontend React Local
   "http://localhost:5173", // Frontend Vite Local
-  "https://nt118.hius.io.vn", // Domain Production (Cloudflare/AWS)
+  "https://nt118.hius.io.vn", // Domain Production
 ];
 
 if (process.env.CORS_ORIGIN) {
@@ -42,21 +41,19 @@ app.use(
   })
 );
 
-// Kết nối Database
 // @ts-ignore
 database.connect();
 
-console.log("--- System Initializing ---");
+console.log("Check Admin Route:", routeAdmin);
+console.log("System Initializing");
 
-// Đăng ký Routes
 routeAdmin(app);
 routeClient(app);
 
-// Webhook Route
 app.use("/trackingmore", trackingWebhook);
 
 try {
-  // @ts-ignore: Handle ES Module vs CommonJS export differences
+  // @ts-ignore
   const finalizeEndedAuctions =
     finalizer.default || finalizer.finalizeEndedAuctions;
 
@@ -64,6 +61,7 @@ try {
     const intervalSec = Number(
       process.env.AUCTION_FINALIZER_INTERVAL_SEC || 60
     );
+
     console.log(`> Auction Finalizer started (Interval: ${intervalSec}s)`);
 
     setInterval(() => {
@@ -78,7 +76,6 @@ try {
   if (typeof startScheduler === "function") {
     const windowSec = Number(process.env.AUCTION_SCHEDULE_WINDOW_SEC || 3600);
     console.log(`> Auction Scheduler started (Window: ${windowSec}s)`);
-
     startScheduler(windowSec).catch((err: any) =>
       console.error("Scheduler Error:", err)
     );
@@ -87,7 +84,6 @@ try {
   console.error("Failed to start Auction Services:", err);
 }
 
-// Start Server
 const PORT = Number(process.env.PORT ?? 8080);
 app.listen(PORT, () => {
   console.log(`API running at http://localhost:${PORT}`);

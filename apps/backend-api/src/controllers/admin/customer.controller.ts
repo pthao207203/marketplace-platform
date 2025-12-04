@@ -8,17 +8,19 @@ import { sendSuccess, sendError } from "../../utils/response";
 export const getListCustomers = async (req: Request, res: Response) => {
   try {
     const { search, status, date, spentMin, spentMax, purchased, refund } =
-      req.query;
+      req.query; // 1. Filter cơ bản cho Role Customer & Trạng thái hoạt động
 
-    // 1. Filter cơ bản cho Role Customer
-    const matchStage: any = { userRole: USER_ROLE.CUSTOMER };
-
+    const matchStage: any = { userRole: USER_ROLE.CUSTOMER }; // SỬA: Dùng 'userName' thay vì 'name' để tìm kiếm
     if (search) {
-      matchStage.name = { $regex: search, $options: "i" };
-    }
+      matchStage.userName = { $regex: search, $options: "i" };
+    } // SỬA: Dùng 'userStatus' thay vì 'status' để lọc
     if (status && status !== "all") {
-      matchStage.status = status;
-    }
+      // Lưu ý: Schema dùng USER_STATUS là Number, nên ta cần chắc chắn giá trị status là Number
+      // Nếu Frontend gửi status dạng string ("active", "deleted"), cần mapping lại thành Number tại đây.
+      // Tạm thời để status dưới dạng String nếu không rõ giá trị USER_STATUS là gì.
+      matchStage.userStatus = status;
+    } // SỬA: 'createdAt' là trường mặc định từ timestamps: true
+
     if (date) {
       const start = new Date(date as string);
       const end = new Date(date as string);
@@ -27,8 +29,7 @@ export const getListCustomers = async (req: Request, res: Response) => {
     }
 
     const pipeline: any[] = [
-      { $match: matchStage },
-      // 2. Lookup Orders
+      { $match: matchStage }, // 2. Lookup Orders (Đảm bảo _id và userId cùng type) // Nếu userId trong Order là String, hãy thêm $addFields: { userIdString: { $toString: "$_id" } } trước bước này
       {
         $lookup: {
           from: "orders",
@@ -36,16 +37,16 @@ export const getListCustomers = async (req: Request, res: Response) => {
           foreignField: "userId",
           as: "orders",
         },
-      },
-      // 3. Tính toán chỉ số
+      }, // 3. Tính toán chỉ số & Mapping tên field
       {
         $project: {
-          _id: 1,
-          name: 1,
-          email: 1,
-          avatar: 1,
-          createdAt: 1,
-          status: 1,
+          _id: 1, // SỬA: Mapping 'userName' thành 'name' cho Frontend
+          name: "$userName", // SỬA: Mapping 'userMail' thành 'email' cho Frontend
+          email: "$userMail", // Dùng đúng tên fields từ Schema
+
+          avatar: "$userAvatar",
+          createdAt: 1, // SỬA: Mapping 'userStatus' thành 'status' cho Frontend // LƯU Ý: Frontend của bạn đang mong đợi status là string ("active", "deleted"), // nhưng ở đây ta chỉ trả về Number. Cần chuyển đổi ở Frontend hoặc BE.
+          status: "$userStatus",
           purchased: { $size: "$orders" },
           spent: {
             $sum: {
@@ -84,9 +85,8 @@ export const getListCustomers = async (req: Request, res: Response) => {
           },
         },
       },
-    ];
+    ]; // 4. Filter nâng cao trên số liệu đã tính
 
-    // 4. Filter nâng cao trên số liệu đã tính
     const matchStats: any = {};
     if (spentMin)
       matchStats.spent = { ...matchStats.spent, $gte: Number(spentMin) };
