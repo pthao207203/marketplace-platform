@@ -1,214 +1,233 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
+
+const USER_STATUS_MAP = {
+  ACTIVE: 1,
+  INACTIVE: 2,
+  BANNED: 3,
+};
+
 interface Admin {
-    id: number;
-    avatar: string;
-    name: string;
-    joined: string; // yyyy-mm-dd
-    purchased: number;
-    spent: number;
-    refund: number;
-    status: "active" | "deleted";
+  _id: string;
+  avatar?: string;
+  name: string;
+  email: string;
+  phone?: string;
+  createdAt: string; 
+  status: number;
 }
 
-const dummyAdmins: Admin[] = [
-    {
-        id: 1,
-        avatar: "/images/user.png",
-        name: "Cá biết bay",
-        joined: "2025-07-16",
-        purchased: 5,
-        spent: 355000,
-        refund: 35500,
-        status: "active",
-    },
-    {
-        id: 2,
-        avatar: "/images/user.png",
-        name: "Cá biết bay",
-        joined: "2025-07-16",
-        purchased: 5,
-        spent: 355000,
-        refund: 35500,
-        status: "deleted",
-    },
-    // Thêm dữ liệu khác nếu cần...
-];
+const getStatusDisplay = (status: number) => {
+  switch (status) {
+    case USER_STATUS_MAP.ACTIVE:
+      return { label: "Hoạt động", className: "border-[#02DE35] bg-[#02DE35]/20 text-green-700" };
+    case USER_STATUS_MAP.BANNED: 
+      return { label: "Đã khóa", className: "border-[#D1460B] bg-[#D1460B]/20 text-red-700" };
+    default:
+      return { label: "Không rõ", className: "border-gray-200 bg-gray-100 text-gray-600" };
+  }
+};
+
+const mapStatusToNumber = (status: string) => {
+  switch (status) {
+    case "active": return USER_STATUS_MAP.ACTIVE.toString();
+    case "deleted": return USER_STATUS_MAP.BANNED.toString();
+    default: return "";
+  }
+};
 
 export default function AdminList() {
-    const [search, setSearch] = useState("");
-    const [statusFilter, setStatusFilter] = useState("all");
-    const [dateFilter, setDateFilter] = useState("");
-    const [purchasedFilter, setPurchasedFilter] = useState("");
-    const [spentMin, setSpentMin] = useState("");
-    const [spentMax, setSpentMax] = useState("");
-    const [refundFilter, setRefundFilter] = useState("");
+  const [admins, setAdmins] = useState<Admin[]>([]);
+  const [loading, setLoading] = useState(true);
 
-    const filteredData = useMemo(() => {
-        return dummyAdmins.filter((c) => {
-            if (search && !c.name.toLowerCase().includes(search.toLowerCase())) return false;
-            if (statusFilter !== "all" && c.status !== statusFilter) return false;
-            if (dateFilter && c.joined !== dateFilter) return false;
-            if (purchasedFilter && c.purchased !== Number(purchasedFilter)) return false;
-            if (spentMin && c.spent < Number(spentMin)) return false;
-            if (spentMax && c.spent > Number(spentMax)) return false;
-            if (refundFilter && c.refund !== Number(refundFilter)) return false;
-            return true;
-        });
-    }, [search, statusFilter, dateFilter, purchasedFilter, spentMin, spentMax, refundFilter]);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [dateFilter, setDateFilter] = useState("");
 
-    // Format ngày đẹp hơn: 16/07/2025
-    const formatDate = (dateStr: string) => {
-        const [y, m, d] = dateStr.split("-");
-        return `${d}/${m}/${y}`;
-    };
+  const fetchAdmins = async () => {
+    try {
+      setLoading(true);
+      const params = new URLSearchParams();
 
-    return (
-        <div className="w-full h-full py-[20px] px-[30px] bg-white/60 min-h-screen text-[18px] max-md:text-[16px] font-normal text-[#441A02]">
-            {/* Header + Filters */}
-            <div className="flex items-center justify-between mb-[20px]">
-                {/* Ô tìm kiếm */}
-                <input
-                    type="text"
-                    placeholder="Tìm kiếm theo tên..."
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    className="w-1/3 border border-gray-200 p-[10px] rounded-[16px] focus:outline-none focus:ring-1 focus:ring-[#F25C05] mr-[10px]"
-                />
+      if (search) params.append("search", search);
+      
+      const numericStatus = mapStatusToNumber(statusFilter);
+      if (numericStatus) params.append("status", numericStatus);
 
-                {/* Các filter nhỏ hơn */}
-                <div className="w-full flex items-center ">
-                    <select
-                        value={statusFilter}
-                        onChange={(e) => setStatusFilter(e.target.value)}
-                        className="w-full border border-gray-200 p-[10px] rounded-[16px] focus:outline-none focus:ring-1 focus:ring-[#F25C05] mr-[10px]"
-                    >
-                        <option value="all">Tất cả </option>
-                        <option value="active">Hoạt động</option>
-                        <option value="deleted">Đã xóa</option>
-                    </select>
+      if (dateFilter) params.append("date", dateFilter);
 
-                    <input
-                        type="date"
-                        value={dateFilter}
-                        onChange={(e) => setDateFilter(e.target.value)}
-                        className="w-full border border-gray-200 p-[10px] rounded-[16px] focus:outline-none focus:ring-1 focus:ring-[#F25C05] mr-[10px]"
-                    />
+      const res = await fetch(`/admin/administrators?${params.toString()}`, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+      });
 
-                    <input
-                        type="number"
-                        placeholder="Đã mua"
-                        value={purchasedFilter}
-                        onChange={(e) => setPurchasedFilter(e.target.value)}
-                        className="w-full border border-gray-200 p-[10px] rounded-[16px] focus:outline-none focus:ring-1 focus:ring-[#F25C05] mr-[10px]"
-                    />
+      const json = await res.json();
+      if (json.success) {
+        setAdmins(json.data);
+      } else {
+        setAdmins([]);
+      }
+    } catch (error) {
+      console.error("Failed to fetch admins", error);
+      setAdmins([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-                    <input
-                        type="number"
-                        placeholder="Chi từ"
-                        value={spentMin}
-                        onChange={(e) => setSpentMin(e.target.value)}
-                        className="w-full border border-gray-200 p-[10px] rounded-[16px] focus:outline-none focus:ring-1 focus:ring-[#F25C05] mr-[10px]"
-                    />
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      fetchAdmins();
+    }, 500);
+    return () => clearTimeout(timeoutId);
+  }, [search, statusFilter, dateFilter]);
 
-                    <input
-                        type="number"
-                        placeholder="Chi đến"
-                        value={spentMax}
-                        onChange={(e) => setSpentMax(e.target.value)}
-                        className="w-full border border-gray-200 p-[10px] rounded-[16px] focus:outline-none focus:ring-1 focus:ring-[#F25C05] mr-[10px]"
-                    />
+  const formatDate = (dateStr: string) => {
+    if (!dateStr) return "N/A";
+    return new Date(dateStr).toLocaleDateString("vi-VN");
+  };
 
-                    <input
-                        type="number"
-                        placeholder="Hoàn trả"
-                        value={refundFilter}
-                        onChange={(e) => setRefundFilter(e.target.value)}
-                        className="w-full border border-gray-200 p-[10px] rounded-[16px] focus:outline-none focus:ring-1 focus:ring-[#F25C05]"
-                    />
-                </div>
-            </div>
+  const clearFilters = () => {
+    setSearch("");
+    setStatusFilter("all");
+    setDateFilter("");
+  };
 
-
-            {/* Table */}
-            <div className="bg-none rounded-[16px] overflow-hidden text-[18px] max-md:text-[16px] font-normal text-[#441A02] ">
-                <div className="w-full overflow-x-auto">
-                    <table className="w-full table-auto">
-
-                        {/* HEADER */}
-                        <thead className=" border-b-[10px] border-[#F9FAFB] bg-white  ">
-                            <tr className="text-center">
-                                <th className="py-[15px] font-bold">Ảnh</th>
-                                <th className="py-[15px] font-bold bg-[#FFF7F3]">Tên tài khoản</th>
-                                <th className="py-[15px] font-bold">Ngày gia nhập</th>
-                                <th className="py-[15px] font-bold bg-[#FFF7F3]">Đã mua</th>
-                                <th className="py-[15px] font-bold">Tiền đã chi</th>
-                                <th className="py-[15px] font-bold bg-[#FFF7F3]">Tiền hoàn trả</th>
-                                <th className="py-[15px] font-bold">Trạng thái</th>
-                            </tr>
-                        </thead>
-
-                        <tbody>
-                            {filteredData.length === 0 ? (
-                                <tr>
-                                    <td colSpan={7} className="text-center py-10 text-[#441A02]">
-                                        Không tìm thấy khách hàng nào.
-                                    </td>
-                                </tr>
-                            ) : (
-                                filteredData.map((c) => (
-                                    <tr key={c.id} className="hover:bg-[#8ECAE6]/30 bg-white">
-                                        {/* Cột Ảnh */}
-                                        <td className="flex p-[10px] items-center justify-center">
-                                            <img
-                                                src={c.avatar}
-                                                alt="avatar"
-                                                className="w-[50px] h-[50px] rounded-full  object-cover border-[1px] border-gray-200"
-                                            />
-                                        </td>
-
-                                        {/* Cột Tên */}
-                                           <td className="p-[10px] font-normal text-[#441A02] text-center">
-                                            <Link
-                                                to={`/user/admins/${c.id}`}
-                                                className=""
-                                            >
-                                                {c.name}
-                                            </Link>
-                                        </td>
-
-                                        {/* Các cột khác */}
-                                        <td className="p-[10px] text-center">{formatDate(c.joined)}</td>
-                                        <td className="p-[10px] text-center">{c.purchased}</td>
-                                        <td className="p-[10px] text-center text-[18px] max-md:text-[16px] font-normal text-[#441A02]">
-                                            {c.spent.toLocaleString()} đ
-                                        </td>
-                                        <td className="p-[10px] text-center text-[18px] max-md:text-[16px] font-normal text-[#441A02]">
-                                            {c.refund.toLocaleString()} đ
-                                        </td>
-                                        <td className="p-[10px] text-center">
-                                            {c.status === "active" ? (
-                                                <span className="px-[20px] py-[5px] rounded-full  border-[1px] border-[#02DE35] bg-[#02DE35]/30 text-[#441A02] text-[18px] max-md:text-[16px] font-normal">
-                                                    Hoạt động
-                                                </span>
-                                            ) : (
-                                                <span className="px-[20px] py-[5px] rounded-full border-[1px] border-[#D1460B] bg-[#D1460B]/30 text-[#441A02] text-[18px] max-md:text-[16px] font-normal">
-                                                    Đã xóa
-                                                </span>
-                                            )}
-                                        </td>
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            {/* Footer info */}
-            <div className="mt-5 text-right text-[18px] max-md:text-[16px] font-normal text-[#441A02]">
-                Tổng: <strong>{filteredData.length}</strong> khách hàng
-            </div>
+  return (
+    <div className="w-full h-full py-[20px] px-[30px] bg-white/60 min-h-screen text-[16px] text-[#441A02]">
+      {/* --- Header + Filters --- */}
+      <div className="flex flex-col gap-4 mb-[20px]">
+        {/* Hàng 1: Search & Status */}
+        <div className="flex gap-4 items-center">
+            <input
+                type="text"
+                placeholder="Tìm tên, email..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="flex-1 border border-gray-200 p-[10px] rounded-[16px] outline-none focus:ring-1 focus:ring-orange-400"
+            />
+             <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="w-[200px] border border-gray-200 p-[10px] rounded-[16px] outline-none"
+            >
+                <option value="all">Tất cả trạng thái</option>
+                <option value="active">Hoạt động</option>
+                <option value="deleted">Đã khóa</option>
+            </select>
         </div>
-    );
+
+        {/* Hàng 2: Date Filter & Reset */}
+        <div className="flex gap-4 items-center">
+            <div className="w-[200px]">
+                <input
+                    type="date"
+                    value={dateFilter}
+                    onChange={(e) => setDateFilter(e.target.value)}
+                    className="border border-gray-200 p-[10px] rounded-[16px] w-full outline-none"
+                />
+            </div>
+            
+            <button onClick={clearFilters} className="text-sm text-gray-500 hover:text-orange-600 underline">
+                Xóa bộ lọc
+            </button>
+        </div>
+      </div>
+
+      {/* --- Table --- */}
+      <div className="bg-white rounded-[16px] overflow-hidden shadow-sm border border-gray-100">
+        <div className="w-full overflow-x-auto">
+          <table className="w-full table-auto">
+            {/* HEADER */}
+            <thead className="border-b bg-[#F9FAFB] text-gray-500 uppercase text-sm">
+              <tr className="text-center">
+                <th className="py-[15px] px-4 font-bold">Ảnh</th>
+                <th className="py-[15px] px-4 font-bold text-left">Thông tin cá nhân</th>
+                <th className="py-[15px] px-4 font-bold">Số điện thoại</th>
+                <th className="py-[15px] px-4 font-bold">Ngày tạo</th>
+                <th className="py-[15px] px-4 font-bold">Trạng thái</th>
+                <th className="py-[15px] px-4 font-bold">Hành động</th>
+              </tr>
+            </thead>
+
+            <tbody className="divide-y divide-gray-100">
+              {loading ? (
+                 <tr>
+                    <td colSpan={6} className="py-10 text-center text-gray-400">
+                        <div className="flex justify-center items-center gap-2">
+                            <div className="w-5 h-5 border-2 border-gray-300 border-t-orange-500 rounded-full animate-spin"></div>
+                            <span>Đang tải dữ liệu...</span>
+                        </div>
+                    </td>
+                </tr>
+              ) : admins.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="text-center py-10 text-gray-400">
+                    Không tìm thấy quản trị viên nào.
+                  </td>
+                </tr>
+              ) : (
+                admins.map((admin) => {
+                    const statusInfo = getStatusDisplay(admin.status);
+                    return (
+                        <tr key={admin._id} className="hover:bg-gray-50 transition-colors">
+                            {/* Ảnh */}
+                            <td className="p-[10px] text-center">
+                                <img
+                                    src={admin.avatar || "/images/user-default.png"}
+                                    alt="avatar"
+                                    className="w-[40px] h-[40px] rounded-full object-cover border mx-auto"
+                                    onError={(e) => {
+                                        (e.target as HTMLImageElement).src = "https://via.placeholder.com/40";
+                                    }}
+                                />
+                            </td>
+
+                            {/* Tên & Email */}
+                            <td className="p-[10px] text-left">
+                                <Link to={`/user/admins/${admin._id}`} className="font-semibold text-[#441A02] hover:text-orange-600 block">
+                                    {admin.name}
+                                </Link>
+                                <span className="text-xs text-gray-500">{admin.email}</span>
+                            </td>
+
+                            {/* Số điện thoại */}
+                            <td className="p-[10px] text-center text-gray-600">
+                                {admin.phone || "---"}
+                            </td>
+
+                            {/* Ngày tạo */}
+                            <td className="p-[10px] text-center text-gray-600">
+                                {formatDate(admin.createdAt)}
+                            </td>
+                            
+                            {/* Trạng thái */}
+                            <td className="p-[10px] text-center">
+                                <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${statusInfo.className}`}>
+                                    {statusInfo.label}
+                                </span>
+                            </td>
+
+                             {/* Hành động (Ví dụ nút sửa) */}
+                             <td className="p-[10px] text-center">
+                                <button className="text-blue-600 hover:text-blue-800 text-sm font-medium mr-2">
+                                    Sửa
+                                </button>
+                                {/* Thêm nút khác nếu cần */}
+                            </td>
+                        </tr>
+                    );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Footer info */}
+      <div className="mt-5 text-right text-sm text-gray-600">
+        Tổng: <strong>{admins.length}</strong> quản trị viên
+      </div>
+    </div>
+  );
 }

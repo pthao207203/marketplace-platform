@@ -11,6 +11,9 @@ import orderRoute from "./order.route";
 import userAdminRoute from "./user.route";
 import payRoute from "./pay.route";
 import cloudinaryRoute from "./cloudinary.route";
+import customerRoute from "./customer.route";
+import sellerRoute from "./seller.route";
+import adminListRoute from "./admin.route";
 
 import {
   requireAdminAuth,
@@ -18,57 +21,37 @@ import {
   requireShopOrAdminAuth,
 } from "../../middlewares/auth.middleware";
 
-const routeAdmin = (app: Application) => {};
+const routeAdmin = (app: Application) => {
+  const PATH_ADMIN = systemConfig.prefixAdmin;
 
-module.exports = (app: Application) => {
   const adminMiddlewares = [requireAdminAuth];
   const shopOrAdminMiddlewares = [requireShopOrAdminAuth];
-  app.use(
-    systemConfig.prefixAdmin + `/dashboard`,
-    [requireShopOrAdminAuth],
-    dashboardRoute
-  );
-  app.use(systemConfig.prefixAdmin + `/auth`, authRoute);
-  app.use(
-    systemConfig.prefixAdmin + `/products`,
-    [requireShopOrAdminAuth],
-    productRoute
-  );
-  app.use(
-    systemConfig.prefixAdmin + `/orders`,
-    [requireShopOrAdminAuth],
-    orderRoute
-  );
-  app.use(
-    systemConfig.prefixAdmin + `/dashboard`,
-    shopOrAdminMiddlewares,
-    dashboardRoute
-  );
-  app.use(systemConfig.prefixAdmin + `/auth`, authRoute);
-  app.use(
-    systemConfig.prefixAdmin + `/products`,
-    shopOrAdminMiddlewares,
-    productRoute
-  );
-  app.use(
-    systemConfig.prefixAdmin + `/orders`,
-    shopOrAdminMiddlewares,
-    orderRoute
-  );
-  app.use(
-    systemConfig.prefixAdmin + `/users`,
-    adminMiddlewares,
-    userAdminRoute
-  );
-  app.use(
-    systemConfig.prefixAdmin + `/categories`,
-    adminMiddlewares,
-    categoryRoute
-  );
-  app.use(systemConfig.prefixAdmin + `/brands`, adminMiddlewares, brandRoute);
-  app.use(systemConfig.prefixAdmin + `/system`, adminMiddlewares, systemRoute);
-  app.use(systemConfig.prefixAdmin + `/pay`, adminMiddlewares, payRoute);
-  app.use(systemConfig.prefixAdmin + `/cloudinary`, cloudinaryRoute);
+
+  app.use(PATH_ADMIN + `/dashboard`, [], dashboardRoute);
+
+  app.use(PATH_ADMIN + `/auth`, authRoute);
+
+  app.use(PATH_ADMIN + `/products`, shopOrAdminMiddlewares, productRoute);
+
+  app.use(PATH_ADMIN + `/orders`, shopOrAdminMiddlewares, orderRoute);
+
+  app.use(PATH_ADMIN + `/users`, [], userAdminRoute);
+
+  app.use(PATH_ADMIN + `/categories`, adminMiddlewares, categoryRoute);
+
+  app.use(PATH_ADMIN + `/brands`, adminMiddlewares, brandRoute);
+
+  app.use(PATH_ADMIN + `/system`, [], systemRoute);
+
+  app.use(PATH_ADMIN + `/pay`, adminMiddlewares, payRoute);
+
+  app.use(PATH_ADMIN + `/cloudinary`, adminMiddlewares, cloudinaryRoute);
+
+  app.use(PATH_ADMIN + `/customers`, [], customerRoute);
+
+  app.use(PATH_ADMIN + `/sellers`, [], sellerRoute);
+
+  app.use(PATH_ADMIN + `/administrators`, [], adminListRoute);
 };
 
 export default routeAdmin;

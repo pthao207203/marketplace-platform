@@ -1,264 +1,256 @@
+import { useState, useEffect } from "react";
+import { useParams, Link } from "react-router-dom";
 import { format } from "date-fns";
-import { ArrowLeft, Phone, Mail, MapPin, Calendar, CreditCard, CheckCircle, Clock } from "lucide-react";
+import { MapPin } from "lucide-react";
 
-const customer = {
-  id: 1,
-  name: "Cá Biết Bay",
-  email: "cabietbay@gmail.com",
-  phone: "0333 333 333",
-  avatar: "/images/avatars/cabietbay.jpg", // thay bằng ảnh thật
-  joinedDate: "2025-07-16",
-  status: "active",
-  totalSpent: 10000000,
-  totalOrders: 28,
-  totalRefunded: 1100000,
-  address: "Thôn Cá, xã Biết, Tỉnh bay, Thành phố Cá biết bay, cách Thủy Cung Động Cung 300 dặm.",
-  bankAccounts: [
-    { bank: "Momo", account: "0333 333 333", name: "Cá Biết Bay" },
-    { bank: "VietCombank", account: "0987 678 978", name: "Cá Biết Bay" },
-    { bank: "VietCombank", account: "0987 678 978", name: "Cá Biết Bay" },
-  ],
-  orders: [
-    {
-      id: "OR#205.206",
-      createdAt: "2025-07-16",
-      completedAt: "2025-07-16",
-      method: "Tiền mặt",
-      amount: 355000,
-      status: "completed",
-    },
-    {
-      id: "OR#205.206",
-      createdAt: "2025-07-16",
-      completedAt: "2025-07-16",
-      method: "Ví",
-      amount: 355000,
-      status: "completed",
-    },
-  ],
+interface Order {
+  _id: string;
+  createdAt: string;
+  completedAt?: string;
+  orderPaymentMethod: string;
+  orderTotalAmount: number;
+  orderStatus: number;
+  orderPaymentStatus: string;
+}
+
+interface BankAccount {
+  bankName: string;
+  accountNumber: string;
+  isDefault: boolean;
+}
+
+interface CustomerDetail {
+  _id: string;
+  name: string;
+  email: string;
+  phone: string;
+  avatar: string;
+  joinedDate: string;
+  status: number; // 1: Active, 3: Banned
+  address: any[];
+  bankAccounts: BankAccount[];
+  totalSpent: number;
+  totalRefunded: number;
+  orders: Order[];
+}
+
+const getOrderStatusLabel = (status: number) => {
+    switch (status) {
+        case 0: return { label: "Mới", color: "bg-blue-100 text-blue-700" };
+        case 1: return { label: "Đã xác nhận", color: "bg-yellow-100 text-yellow-700" };
+        case 2: return { label: "Đang giao", color: "bg-purple-100 text-purple-700" };
+        case 3: return { label: "Hoàn tất", color: "bg-[#02DE35]/30 text-[#441A02]" };
+        case 4: return { label: "Đã hủy", color: "bg-red-100 text-red-700" };
+        default: return { label: "Không rõ", color: "bg-gray-100 text-gray-700" };
+    }
 };
 
 export default function DetailOneCustomer() {
-  const formatCurrency = (amount: number) =>
-    new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(amount);
+  const { id } = useParams(); 
+  const [customer, setCustomer] = useState<CustomerDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  
+  const [updating, setUpdating] = useState(false);
 
-  const formatDate = (dateString: string) => format(new Date(dateString), "dd/MM/yyyy");
+  useEffect(() => {
+    const fetchCustomerDetail = async () => {
+      try {
+        setLoading(true);
+        const res = await fetch(`/admin/customers/${id}`);
+        const json = await res.json();
+        if (json.success) setCustomer(json.data);
+        else console.error(json.message);
+      } catch (error) {
+        console.error("Failed to fetch customer detail", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    if (id) fetchCustomerDetail();
+  }, [id]);
+
+  const handleToggleStatus = async () => {
+    if (!customer) return;
+
+    const newStatus = customer.status === 1 ? 3 : 1;
+    const actionText = newStatus === 3 ? "CHẶN" : "MỞ KHÓA";
+    
+    if (!window.confirm(`Bạn có chắc chắn muốn ${actionText} khách hàng này không?`)) return;
+
+    try {
+      setUpdating(true);
+      
+      const res = await fetch(`/admin/users/${customer._id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+
+      const json = await res.json();
+
+      if (json.success) {
+        
+        setCustomer((prev) => prev ? { ...prev, status: newStatus } : null);
+        alert(`Đã ${actionText.toLowerCase()} thành công!`);
+      } else {
+        alert("Lỗi: " + json.message);
+      }
+    } catch (error) {
+      console.error("Error updating status:", error);
+      alert("Có lỗi xảy ra khi cập nhật trạng thái.");
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(amount || 0);
+
+  const formatDate = (dateString: string) => {
+    if(!dateString) return "---";
+    return format(new Date(dateString), "dd/MM/yyyy");
+  };
+
+  if (loading) return (
+    <div className="w-full h-screen flex justify-center items-center">
+         <div className="w-10 h-10 border-4 border-gray-300 border-t-[#F25C05] rounded-full animate-spin"></div>
+    </div>
+  );
+
+  if (!customer) return <div className="p-10 text-center">Không tìm thấy thông tin khách hàng.</div>;
+
+  const displayAddress = customer.address?.find((a: any) => a.isDefault) || customer.address?.[0];
+  const addressString = displayAddress 
+    ? `${displayAddress.street}, ${displayAddress.ward}, ${displayAddress.province}`
+    : "Chưa cập nhật địa chỉ";
 
   return (
-    <div className="w-full h-full py-[20px] px-[30px] bg-white/60">
-
-
-      <div className="mb-[30px] md:flex flex-col  justify-between">
-
+    <div className="w-full h-full py-[20px] px-[30px] bg-white/60 min-h-screen">
+      
+      {/* HEADER THÔNG TIN */}
+      <div className="mb-[30px] md:flex flex-col justify-between">
         <div className="flex gap-[15px] w-full justify-between items-center">
+          
+          {/* Avatar & Badge */}
           <div className="flex flex-col items-center">
             <img
-              src={customer.avatar || "/images/user-placeholder.png"}
-              // alt={customer.name}
+              src={customer.avatar || "/images/user-default.png"}
               className="w-[150px] h-[150px] rounded-full object-cover border-[1px] border-gray-200 bg-amber-100"
+              onError={(e) => {(e.target as HTMLImageElement).src = "https://via.placeholder.com/150"}}
             />
-            <span className="inline-block mt-[-30px] px-[10px] py-[5px] bg-[#FBCCB2] text-[18px] max-md:text-[16px] font-normal text-[#441A02] rounded-[16px]">
-              Đã xác thực
+            {/* Badge trạng thái */}
+            <span className={`inline-block mt-[-30px] px-[10px] py-[5px] text-[16px] font-normal rounded-[16px] ${customer.status === 1 ? 'bg-[#02DE35]/30 text-[#441A02]' : 'bg-red-200 text-red-800'}`}>
+              {customer.status === 1 ? "Đang hoạt động" : "Đã bị khóa"}
             </span>
           </div>
-          <div className="w-full flex flex-col justify-between items-start">
-            <h1 className="font-bold text-[18px] max-md:text-[16px] text-[#441A02]">{customer.name}</h1>
-            <p className="font-normal text-[18px] max-md:text-[16px] text-[#441A02] mt-[5px]">
-              {customer.email}
-            </p>
 
-            <div className="flex w-full gap-[10px]">
-              <div className="mt-[10px] flex flex-col bg-none">
-                <div className="px-[10px] py-[5px] flex justify-between min-w-[300px]  bg-[#FFB703]/30 rounded-t-[8px] mb-[5px]">
-                  <p className="font-bold text-[18px] max-md:text-[16px] text-[#441A02]">Ví</p>
-                  <p className="font-bold text-[18px] max-md:text-[16px] text-[#F25C05]">Lịch sử</p>
-                </div>
-                <div className="px-[10px] py-[5px] flex flex-col bg-white rounded-b-[8px] border-[1px] border-[#FFB703]/30">
-                  <p className="font-normal text-[18px] max-md:text-[16px] text-[#441A02]">Số dư khả dụng</p>
-                  <p className="font-bold text-[18px] max-md:text-[16px] text-[#441A02] text-right">{formatCurrency(customer.totalSpent)}</p>
-                </div>
+          <div className="w-full flex flex-col justify-between items-start ml-5">
+            <h1 className="font-bold text-[18px] text-[#441A02]">{customer.name}</h1>
+            <p className="font-normal text-[16px] text-[#441A02] mt-[5px]">{customer.email}</p>
+
+            <div className="flex w-full gap-[20px] mt-4">
+              <div className="flex flex-col">
+                <div className="px-[15px] py-[5px] bg-[#FFB703]/30 rounded-t-[8px]"><p className="font-bold text-[#441A02]">Tổng Hoàn Trả</p></div>
+                <div className="px-[15px] py-[10px] bg-white rounded-b-[8px] border-[1px] border-[#FFB703]/30"><p className="font-bold text-[18px] text-[#441A02] text-right">{formatCurrency(customer.totalRefunded)}</p></div>
               </div>
-
-              <div className="mt-[10px] flex flex-col bg-none">
-                <div className="px-[10px] py-[5px] flex justify-between min-w-[300px]  bg-[#8ECAE6]/30 rounded-t-[8px] mb-[5px]">
-                  <p className="font-bold text-[18px] max-md:text-[16px] text-[#441A02]">Tổng chi</p>
-                  <p className="font-bold text-[18px] max-md:text-[16px] text-[#F25C05]">Lịch sử</p>
-                </div>
-                <div className="px-[10px] py-[5px] flex flex-col bg-white rounded-b-[8px] border-[1px] border-[#8ECAE6]/30">
-                  <p className="font-normal text-[18px] max-md:text-[16px] text-[#441A02]">Tổng tiền đã chi</p>
-                  <p className="font-bold text-[18px] max-md:text-[16px] text-[#441A02] text-right">{formatCurrency(customer.totalSpent)}</p>
-                </div>
+              <div className="flex flex-col">
+                <div className="px-[15px] py-[5px] bg-[#8ECAE6]/30 rounded-t-[8px]"><p className="font-bold text-[#441A02]">Tổng chi tiêu</p></div>
+                <div className="px-[15px] py-[10px] bg-white rounded-b-[8px] border-[1px] border-[#8ECAE6]/30"><p className="font-bold text-[18px] text-[#441A02] text-right">{formatCurrency(customer.totalSpent)}</p></div>
               </div>
             </div>
           </div>
-          <div className="text-center justify-items-end w-[226px] h-0">
-            <button className="w-full p-[10px] bg-[#D1460B]/30 text-[18px] max-md:text-[16px] text-[#441A02] text-center rounded-[16px] font-normal items-center gap-[5px]">
-              Chặn người dùng
+
+          {/* --- NÚT HÀNH ĐỘNG --- */}
+          <div className="w-[200px]">
+            <button
+              onClick={handleToggleStatus}
+              disabled={updating}
+              className={`w-full p-[10px] rounded-[16px] font-medium transition flex items-center justify-center gap-2
+                ${customer.status === 1 
+                    ? 'bg-[#D1460B]/20 hover:bg-[#D1460B]/30 text-[#441A02]' // Nút màu cam (Chặn)
+                    : 'bg-[#02DE35]/20 hover:bg-[#02DE35]/30 text-green-800' // Nút màu xanh (Mở khóa)
+                } ${updating ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              {updating ? (
+                  <span>Đang xử lý...</span>
+              ) : (
+                  customer.status === 1 ? "Chặn người dùng" : "Mở khóa tài khoản"
+              )}
             </button>
           </div>
+
         </div>
-
-
       </div>
-
-
-      {/* Thông tin người dùng */}
-      <div className="">
-        <h2 className="text-[18px] max-md:text-[16px] text-[#441A02] font-bold mb-[20px]">Thông tin người dùng</h2>
-        <div className="grid grid-cols-1 md:grid-cols-4 text-sm">
-          <div>
-            <p className="text-[14px] max-md:text-[12px] text-[#A09CAB] mb-[10px]">Họ và tên</p>
-            <p className="font-normal text-[18px] max-md:text-[16px] text-[#441A02]">{customer.name}</p>
-          </div>
-          <div>
-            <p className="text-[14px] max-md:text-[12px] text-[#A09CAB] mb-[10px]">Gmail</p>
-            <p className="font-normal text-[18px] max-md:text-[16px] text-[#441A02]">{customer.email}</p>
-          </div>
-          <div>
-            <p className="text-[14px] max-md:text-[12px] text-[#A09CAB] mb-[10px]">SĐT</p>
-            <p className="font-normal text-[18px] max-md:text-[16px] text-[#441A02]">{customer.phone}</p>
-          </div>
-          <div>
-            <p className="text-[14px] max-md:text-[12px] text-[#A09CAB] mb-[10px]">Ngày tham gia</p>
-            <p className="font-normal text-[18px] max-md:text-[16px] text-[#441A02]">{formatDate(customer.joinedDate)}</p>
-          </div>
+      
+      {}
+      
+      {/* THÔNG TIN CHI TIẾT */}
+      <div className="mb-8">
+        <h2 className="text-[18px] text-[#441A02] font-bold mb-[20px]">Thông tin người dùng</h2>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div><p className="text-[12px] text-[#A09CAB] mb-1">Họ và tên</p><p className="font-medium text-[#441A02]">{customer.name}</p></div>
+            <div><p className="text-[12px] text-[#A09CAB] mb-1">Email</p><p className="font-medium text-[#441A02]">{customer.email}</p></div>
+            <div><p className="text-[12px] text-[#A09CAB] mb-1">SĐT</p><p className="font-medium text-[#441A02]">{customer.phone || "---"}</p></div>
+            <div><p className="text-[12px] text-[#A09CAB] mb-1">Ngày tham gia</p><p className="font-medium text-[#441A02]">{formatDate(customer.joinedDate)}</p></div>
         </div>
-
-        <div className="mt-[15px] mb-[15px]">
-          <p className="text-[14px] max-md:text-[12px] text-[#A09CAB] mb-[10px]">Địa chỉ giao</p>
-          <div className="mt-2 p-4 bg-gray-50 rounded-xl flex items-start gap-3">
-            <MapPin className="w-5 h-5 text-orange-500 mt-0.5" />
-            <p className="text-gray-800">{customer.address}</p>
-            <button className="ml-auto text-orange-600 font-medium text-sm">Mặc định</button>
+        <div className="mt-6">
+          <p className="text-[12px] text-[#A09CAB] mb-2">Địa chỉ giao hàng</p>
+          <div className="p-4 bg-gray-50 rounded-xl flex items-start gap-3 border border-gray-100 max-w-2xl">
+            <MapPin className="w-5 h-5 text-[#F25C05] mt-0.5 flex-shrink-0" />
+            <p className="text-[#441A02]">{addressString}</p>
           </div>
         </div>
       </div>
 
-      {/* Ngân hàng */}
+      {/* DANH SÁCH NGÂN HÀNG */}
       <div className="mb-[30px]">
-        <h2 className="text-[14px] max-md:text-[12px] text-[#A09CAB] mb-[10px]">
-          Ngân hàng
-        </h2>
-
-        <div className="flex gap-[15px]">
-          {customer.bankAccounts.map((bank, i) => (
-            <div
-              key={i}
-              className="flex flex-col  bg-none rounded-[8px] overflow-hidden"
-            >
-              {/* Header giống hệt phần Tổng chi */}
-              <div className="flex justify-between min-w-[300px]  bg-[#EFF1F5] rounded-t-[8px] mb-[5px]">
-                <p className="px-[10px] py-[5px] font-normal text-[18px] max-md:text-[16px] text-[#441A02]">
-                  {bank.name}
-                </p>
-                {i === 0 && (
-                  <p className="px-[10px] py-[5px] font-bold text-[18px] max-md:text-[16px] text-[#F25C05]">Mặc định</p>
-                )}
-              </div>
-
-              {/* Nội dung bên dưới */}
-              <div className="flex flex-col bg-white rounded-b-[8px] border-[1px] border-[#8ECAE6]/30 px-[10px] py-[5px] ">
-                <p className="font-normal text-[18px] max-md:text-[16px] text-[#441A02]">
-                  {bank.account}
-                </p>
-                <p className="font-normal text-[18px] max-md:text-[16px] text-[#441A02]">
-                  {bank.bank}
-                </p>
-              </div>
-            </div>
-          ))}
+        <h2 className="text-[14px] text-[#A09CAB] uppercase mb-[15px]">Ngân hàng liên kết</h2>
+        <div className="flex flex-wrap gap-[15px]">
+          {customer.bankAccounts && customer.bankAccounts.length > 0 ? (
+            customer.bankAccounts.map((bank, i) => (
+                <div key={i} className="flex flex-col rounded-[8px] overflow-hidden min-w-[250px]">
+                <div className="flex justify-between bg-[#EFF1F5] px-[15px] py-[8px]"><p className="font-medium text-[#441A02]">{bank.bankName}</p></div>
+                <div className="flex flex-col bg-white border border-[#EFF1F5] px-[15px] py-[10px]"><p className="text-[16px] text-[#441A02] font-bold tracking-wide">{bank.accountNumber}</p></div>
+                </div>
+            ))
+          ) : (<p className="text-gray-400 italic">Chưa liên kết ngân hàng.</p>)}
         </div>
       </div>
 
-      {/* Bảng đơn hàng */}
-      <div className="">
-        <h2 className="text-[18px] max-md:text-[16px] font-bold text-[#441A02] mb-[20px]">
-          Thông tin các đơn hàng
-        </h2>
-
-        <div className="w-full overflow-x-auto">
+      {/* BẢNG ĐƠN HÀNG */}
+      <div>
+        <h2 className="text-[18px] font-bold text-[#441A02] mb-[20px]">Lịch sử đơn hàng</h2>
+        <div className="w-full overflow-x-auto rounded-lg border border-gray-100">
           <table className="w-full table-auto">
-            {/* HEADER – giống hệt bảng danh sách khách hàng */}
-            <thead className="border-b-[10px] border-[#F9FAFB] bg-white">
-              <tr className="text-center text-[18px] max-md:text-[16px] font-bold text-[#441A02]">
-                <th className="py-[15px]">Mã đơn</th>
-                <th className="py-[15px] bg-[#FFF7F3]">Ngày tạo</th>
-                <th className="py-[15px]">Ngày hoàn thành</th>
-                <th className="py-[15px] bg-[#FFF7F3]">Phương thức</th>
-                <th className="py-[15px]">Tổng chi phí</th>
-                <th className="py-[15px] bg-[#FFF7F3]">Thanh toán</th>
-                <th className="py-[15px]">Trạng thái</th>
+            <thead className="bg-[#F9FAFB] border-b border-gray-200">
+              <tr className="text-center text-[14px] font-bold text-[#441A02]">
+                <th className="py-[15px]">Mã đơn</th><th className="py-[15px]">Ngày tạo</th><th className="py-[15px]">Tổng tiền</th><th className="py-[15px]">Thanh toán</th><th className="py-[15px]">Trạng thái</th><th className="py-[15px]">Hành động</th>
               </tr>
             </thead>
-
-            {/* BODY – giống hệt style bảng khách hàng */}
-            <tbody>
+            <tbody className="bg-white divide-y divide-gray-100">
               {customer.orders.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="text-center py-10 font-normal text-[18px] max-md:text-[16px] text-[#441A02]">
-                    Không có đơn hàng nào.
-                  </td>
-                </tr>
+                <tr><td colSpan={6} className="text-center py-10 text-gray-500">Khách hàng chưa có đơn hàng nào.</td></tr>
               ) : (
-                customer.orders.map((order) => (
-                  <tr
-                    key={order.id}
-                    className="hover:bg-[#8ECAE6]/30 bg-white border-b border-gray-100 transition"
-                  >
-                    {/* Mã đơn – nổi bật cam */}
-                    <td className="p-[10px] text-center">
-                      <span className="font-bold text-[#F25C05]font-normal text-[18px] max-md:text-[16px]">
-                        {order.id}
-                      </span>
-                    </td>
-
-                    {/* Ngày tạo */}
-                    <td className="p-[10px] text-center font-normal text-[18px] max-md:text-[16px] text-[#441A02]">
-                      {formatDate(order.createdAt)}
-                    </td>
-
-                    {/* Ngày hoàn thành */}
-                    <td className="p-[10px] text-center font-normal text-[18px] max-md:text-[16px] text-[#441A02]">
-                      {formatDate(order.completedAt)}
-                    </td>
-
-                    {/* Phương thức */}
-                    <td className="p-[10px] text-center font-normal text-[18px] max-md:text-[16px] text-[#441A02]">
-                      {order.method}
-                    </td>
-
-                    {/* Tổng chi phí */}
-                    <td className="p-[10px] text-center font-normal text-[18px] max-md:text-[16px] text-[#441A02]">
-                      {formatCurrency(order.amount)}
-                    </td>
-
-                    {/* Thanh toán – hoàn tất */}
-                    <td className="p-[10px] text-center">
-                      <span className="inline-flex items-center gap-1 px-[20px] py-[5px] rounded-full  border-[1px] border-[#02DE35] bg-[#02DE35]/30 font-normal text-[18px] max-md:text-[16px] text-[#441A02]">
-      
-                        Hoàn tất
-                      </span>
-                    </td>
-
-                    {/* Trạng thái – nút vận chuyển */}
-                    <td className="p-[10px] text-center">
-                      <button className="px-[20px] py-[5px] border-[1px] border-[#2571BC] bg-[#8ECAE6]/30 rounded-full text-[18px] max-md:text-[16px] text-[#441A02] font-medium hover:bg-blue-200 transition">
-                        Vận chuyển
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                customer.orders.map((order) => {
+                    const statusInfo = getOrderStatusLabel(order.orderStatus);
+                    return (
+                        <tr key={order._id} className="hover:bg-gray-50 transition">
+                            <td className="p-[15px] text-center font-bold text-[#F25C05]">#{order._id.slice(-6).toUpperCase()}</td>
+                            <td className="p-[15px] text-center text-[#441A02]">{formatDate(order.createdAt)}</td>
+                            <td className="p-[15px] text-center font-bold text-[#441A02]">{formatCurrency(order.orderTotalAmount)}</td>
+                            <td className="p-[15px] text-center"><span className="text-sm px-2 py-1 bg-gray-100 rounded text-gray-600">{order.orderPaymentMethod}</span></td>
+                            <td className="p-[15px] text-center"><span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusInfo.color}`}>{statusInfo.label}</span></td>
+                            <td className="p-[15px] text-center"><Link to={`/admin/orders/${order._id}`} className="text-blue-600 hover:underline text-sm">Chi tiết</Link></td>
+                        </tr>
+                    );
+                })
               )}
             </tbody>
           </table>
         </div>
-
-        {/* Footer giống bảng khách hàng */}
-        <div className="mt-5 text-right text-[18px] max-md:text-[16px] font-normal text-[#441A02]">
-          Tổng: <strong>{customer.orders.length}</strong> đơn hàng
-        </div>
+        <div className="mt-5 text-right text-[16px] text-[#441A02]">Tổng: <strong>{customer.orders.length}</strong> đơn hàng</div>
       </div>
-    </div>
 
+    </div>
   );
 }
