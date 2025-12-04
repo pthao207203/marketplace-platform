@@ -1,56 +1,79 @@
+"use client"; // Quan trọng: Thêm dòng này vì chúng ta dùng useState
+
+import { useState } from "react";
+
 import EcommerceMetrics from "../../components/ecommerce/EcommerceMetrics";
 import SalesChart from "../../components/ecommerce/SalesChart";
 import MonthlyTarget from "../../components/ecommerce/MonthlyTarget";
 import PageMeta from "../../components/common/PageMeta";
 import Task from "../../components/ecommerce/Task";
 import OrderStatisticsChart from "../../components/ecommerce/OrderStatisticsChart";
-import Filter from "../../components/ecommerce/Filter";
+
+import Filter, { FilterParams } from "../../components/ecommerce/Filter";
+
 export default function Home() {
+  
+  const [filterParams, setFilterParams] = useState<FilterParams>({
+    type: "year",
+    year: new Date().getFullYear(),
+  });
+
+  const handleFilterChange = (newParams: FilterParams) => {
+    console.log("Dashboard nhận được filter mới:", newParams);
+    setFilterParams(newParams);
+  };
+
   return (
     <>
       <PageMeta
-        title="React.js Ecommerce Dashboard | TailAdmin - React.js Admin Dashboard Template"
-        description="This is React.js Ecommerce Dashboard page for TailAdmin - React.js Tailwind CSS Admin Dashboard Template"
+        title="Dashboard | SecondChance Admin"
+        description="Trang quản trị tổng quan cho hệ thống SecondChance"
       />
-      <div className="w-full h-full py-[20px] px-[30px] bg-white/60">
-        <div className="w-full">
-            <div className="mb-[20px]">
-              <Filter />
+      
+      <div className="w-full min-h-screen py-6 px-4 md:px-6 xl:px-9 bg-gray-50/50">
+        
+        {/* Phần Filter & Header */}
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          {/* 3. Truyền hàm handle xuống Filter */}
+          <Filter onFilterChange={handleFilterChange} />
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-6 xl:grid-cols-12 2xl:gap-7.5">
+          
+          {/* CỘT TRÁI */}
+          <div className="col-span-12 xl:col-span-4 flex flex-col gap-4 md:gap-6">
+            <div className="w-full">
+               {/* 4. Truyền filterParams xuống các con */}
+               <EcommerceMetrics filter={filterParams} />
             </div>
 
-          </div>
-
-        <div className="flex flex-col gap-[10px] md:flex-row w-full h-full">
-          {/* Cột trái */}
-          <div className="w-auto md:w-[35%] sm:w-[100%]">
-            <div className="mb-[10px]">
-              <EcommerceMetrics />
+            <div className="w-full">
+               {}
+               <Task />
             </div>
-            <Task />
           </div>
 
-          {/* Cột phải */}
-          <div className="w-full h-full">
-            <MonthlyTarget />
+          {/* CỘT PHẢI */}
+          <div className="col-span-12 xl:col-span-8 flex flex-col gap-4 md:gap-6">
+            
+            {/* Mục tiêu tháng */}
+            <MonthlyTarget filter={filterParams} />
 
-            <div className="flex flex-col md:flex-row gap-[10px] mt-[10px] min-h-full">
-
-              {/* Biểu đồ thống kê đơn hàng */}
-              <div className="w-auto h-auto">
-                <OrderStatisticsChart />
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="w-full">
+                {/* Biểu đồ tròn đơn hàng */}
+                <OrderStatisticsChart filter={filterParams} />
               </div>
 
-              {/* Sales chart */}
-              <div className="w-full h-auto">
-                <SalesChart />
+              <div className="w-full">
+                {/* Biểu đồ cột doanh thu */}
+                <SalesChart filter={filterParams} />
               </div>
-
             </div>
           </div>
 
         </div>
       </div>
-
     </>
   );
 }
