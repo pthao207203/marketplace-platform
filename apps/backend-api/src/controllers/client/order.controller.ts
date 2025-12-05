@@ -6,6 +6,7 @@ import { UserModel } from "../../models/user.model";
 import OrderModel from "../../models/order.model";
 import ShipmentModel from "../../models/shipment.model";
 import { ProductModel, IProduct } from "../../models/product.model";
+import { AuctionModel } from "../../models/auction.model";
 import {
   ORDER_STATUS,
   PAYMENT_METHOD,
@@ -203,6 +204,9 @@ export async function getOrderDetail(req: Request, res: Response) {
   }
 }
 
+// GET /api/orders/by-ref/:ref -> find order by payment reference for current buyer
+/* Removed getOrderByPaymentRef: not needed per latest requirements. */
+
 type PreviewItem = { productId: string; qty?: number };
 
 // POST /api/orders/preview
@@ -223,6 +227,19 @@ export async function previewOrder(req: Request, res: Response) {
 
     const proms = normalized.map((it) => findProductById(it.productId));
     const prods = await Promise.all(proms);
+
+    // If this request originated from an auction payload, override the
+    // product price with the auction final price so buyer is charged correctly.
+    if ((body as any).__auctionFinalPrice) {
+      const auctionPrice = Number((body as any).__auctionFinalPrice || 0);
+      for (let i = 0; i < normalized.length; i++) {
+        try {
+          if (prods[i]) (prods[i] as any).productPrice = auctionPrice;
+        } catch (e) {
+          // ignore
+        }
+      }
+    }
 
     const byShop: Record<
       string,
@@ -330,6 +347,42 @@ export async function placeOrder(req: Request, res: Response) {
       return sendError(res, 401, "Unauthorized");
 
     const body = req.body || {};
+
+    // If this request is for creating an order from an auction, allow a
+    // simplified payload: { auctionId, paymentMethod?, shippingAddressId? }
+    // We will fetch auction/product/user/address server-side and populate
+    // `body.items` so the existing flow can continue unchanged.
+    if (body.auctionId) {
+      const auctionId = String(body.auctionId);
+      const auction = await AuctionModel.findById(auctionId).lean();
+      if (!auction) return sendError(res, 400, "Auction not found");
+
+      // Only allow the auction winner to place the order for that auction
+      if (!auction.finalWinnerId || String(auction.finalWinnerId) !== String(userId)) {
+        return sendError(res, 403, "Only auction winner may place this order");
+      }
+
+      // Find related product
+      const auctionProduct = await ProductModel.findOne({ 'productAuction.auctionId': auction._id }).lean();
+      if (!auctionProduct) return sendError(res, 400, "Product for auction not found");
+
+      // Build minimal items payload for the existing flow
+      body.items = [{ productId: String((auctionProduct as any)._id), qty: auction.quantity || 1 }];
+
+      // Persist the auction final price so we can override the product price later
+      (body as any).__auctionFinalPrice = Number(auction.finalPrice || auction.currentPrice || 0);
+
+      // Default payment method to wallet if not provided
+      if (!body.paymentMethod) body.paymentMethod = PAYMENT_METHOD.WALLET;
+
+      // If shipping address not provided, attempt to use user's default address
+      if (!body.shippingAddressId && !body.shippingAddress) {
+        const u = await UserModel.findById(String(userId)).select('userAddress').lean<any>();
+        const def = (u?.userAddress || []).find((a: any) => a.isDefault) || (u?.userAddress && u.userAddress[0]);
+        if (def) body.shippingAddressId = def._id;
+      }
+    }
+
     const items: { productId: string; qty?: number }[] = Array.isArray(
       body.items
     )
@@ -772,5 +825,57 @@ export async function cancelOrder(req: Request, res: Response) {
     session.endSession();
     console.error("cancelOrder error", err);
     return sendError(res, 500, "Server error", err?.message);
+  }
+}
+
+// PATCH /api/orders/:id/shipping -> update shipping address for an order (buyer only)
+export async function updateOrderShipping(req: Request, res: Response) {
+  try {
+    const userId = req.user?.sub;
+    if (!userId || !Types.ObjectId.isValid(String(userId)))
+      return sendError(res, 401, "Unauthorized");
+
+    const orderId = req.params.id;
+    if (!orderId || !Types.ObjectId.isValid(orderId))
+      return sendError(res, 400, "Invalid order id");
+
+    const body = req.body || {};
+    const shippingAddressId = body.shippingAddressId;
+    const shippingAddressObj = body.shippingAddress;
+
+    if (!shippingAddressId && !shippingAddressObj)
+      return sendError(res, 400, "Missing shipping address or shippingAddressId");
+
+    const order: any = await OrderModel.findById(orderId).lean();
+    if (!order) return sendError(res, 404, "Order not found");
+    if (String(order.orderBuyerId) !== String(userId)) return sendError(res, 403, "Forbidden");
+
+    // Only allow updating shipping for orders created from auctions (optional guard)
+    if (
+      order.orderPaymentReference &&
+      typeof order.orderPaymentReference === 'string' &&
+      !order.orderPaymentReference.startsWith('AUCTION-')
+    ) {
+      // still allow update for regular orders, but if you want to restrict to auctions remove this block
+    }
+
+    let shippingAddress: any = null;
+    if (shippingAddressId) {
+      const u = await UserModel.findById(String(userId)).select('userAddress').lean<any>();
+      shippingAddress = (u?.userAddress || []).find((a: any) => String(a._id) === String(shippingAddressId)) || null;
+      if (!shippingAddress) return sendError(res, 400, 'Shipping address not found');
+    } else if (shippingAddressObj && typeof shippingAddressObj === 'object') {
+      shippingAddress = shippingAddressObj;
+    }
+
+    if (!shippingAddress) return sendError(res, 400, 'Invalid shipping address');
+
+    await OrderModel.updateOne({ _id: orderId }, { $set: { orderShippingAddress: shippingAddress } });
+
+    const updated = await OrderModel.findById(orderId).lean();
+    return sendSuccess(res, { order: updated });
+  } catch (err: any) {
+    console.error('updateOrderShipping error', err);
+    return sendError(res, 500, 'Server error', err?.message);
   }
 }

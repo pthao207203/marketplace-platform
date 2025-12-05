@@ -17,6 +17,7 @@ import {
 import { findCategoriesSorted } from "../../services/category.service";
 import { ProductModel, IProduct } from "../../models/product.model"; // Import IProduct
 import { BrandModel } from "../../models/brand.model";
+import { AuctionModel } from "../../models/auction.model";
 import { UserModel } from "../../models/user.model";
 import { Types } from "mongoose";
 
@@ -561,6 +562,54 @@ export async function getProductDetail(req: Request, res: Response) {
         ? p.productMedia[0] ?? null
         : p.productMedia ?? null,
     };
+
+    // --- START: Enrich with auction details (logic from admin controller) ---
+    try {
+      const priceType = p.productPriceType;
+      if (priceType === 3 && p.productAuction?.auctionId) {
+        const auction = await AuctionModel.findById(
+          p.productAuction.auctionId
+        ).lean();
+        if (auction) {
+          // Update price to currentPrice
+          if (typeof auction.currentPrice === "number") {
+            product.price = auction.currentPrice;
+          }
+
+          const bidders = Array.isArray(auction.bidHistory)
+            ? auction.bidHistory
+            : [];
+          const userIds = [
+            ...new Set(
+              bidders.map((b: any) => String(b.userId)).filter(Boolean)
+            ),
+          ];
+          const users = userIds.length
+            ? await UserModel.find({ _id: { $in: userIds } })
+                .select("_id userName userAvatar")
+                .lean()
+            : [];
+          const usersMap: Record<string, any> = {};
+          users.forEach((u: any) => {
+            usersMap[String(u._id)] = u;
+          });
+          product.auction = {
+            id: String(auction._id),
+            currentPrice: auction.currentPrice,
+            endsAt: auction.endsAt,
+            bidHistory: bidders.map((b: any) => ({
+              userId: String(b.userId),
+              amount: b.amount,
+              createdAt: b.createdAt,
+              bidder: usersMap[String(b.userId)] ? { id: String(usersMap[String(b.userId)]._id), userName: usersMap[String(b.userId)].userName, userAvatar: usersMap[String(b.userId)].userAvatar } : undefined,
+            })),
+          };
+        }
+      }
+    } catch (err) {
+      console.warn("getProductDetail: failed to load auction info for client", err);
+    }
+    // --- END: Enrich with auction details ---
 
     try {
       const sellerId = (p as any).productShopId
