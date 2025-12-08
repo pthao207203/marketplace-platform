@@ -1046,3 +1046,74 @@ export async function submitSellerApplication(req: Request, res: Response) {
     return sendError(res, 500, "Server error", err?.message);
   }
 }
+
+// GET /api/products/seller/:id/reviews -> public seller reviews (paginated)
+export async function getSellerReviews(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+    if (!id || !Types.ObjectId.isValid(String(id)))
+      return sendError(res, 400, "Missing or invalid seller id");
+
+    const page = Math.max(1, Number(req.query.page ?? 1));
+    const pageSize = Math.min(
+      100,
+      Math.max(1, Number(req.query.pageSize ?? 20))
+    );
+    const skip = (page - 1) * pageSize;
+
+    const seller = await UserModel.findById(String(id))
+      .select("userComment userName userAvatar userRate")
+      .lean<any>();
+    if (!seller) return sendError(res, 404, "Seller not found");
+
+    const comments = Array.isArray(seller.userComment)
+      ? seller.userComment
+      : [];
+    const total = comments.length;
+
+    // paginate in-memory (comments are stored as subdocuments)
+    const pageItems = comments.slice(skip, skip + pageSize);
+
+    // collect commenter ids to resolve their names/avatars
+    const commenterIds = Array.from(
+      new Set(
+        pageItems
+          .map((c: any) => (c && c.by ? String(c.by) : null))
+          .filter(Boolean)
+      )
+    );
+    let commenterMap: Record<string, any> = {};
+    if (commenterIds.length) {
+      const users = await UserModel.find({ _id: { $in: commenterIds } })
+        .select("userName userAvatar")
+        .lean<any>();
+      for (const u of users) commenterMap[String(u._id)] = u;
+    }
+
+    const items = pageItems.map((c: any) => ({
+      rate: typeof c.rate === "number" ? c.rate : undefined,
+      description: c.description ?? undefined,
+      media: Array.isArray(c.media) ? c.media : c.media ? [c.media] : [],
+      createdAt: c.createdAt ? new Date(c.createdAt).toISOString() : undefined,
+      by: c.by ? String(c.by) : undefined,
+      byUser: c.by ? commenterMap[String(c.by)] || undefined : undefined,
+    }));
+
+    // compute average rating from comments if available, otherwise fallback to stored userRate
+    let averageRating: number | undefined = undefined;
+    if (comments.length) {
+      const sum = comments.reduce(
+        (s: number, r: any) => s + (typeof r.rate === "number" ? r.rate : 0),
+        0
+      );
+      averageRating = Math.round((sum / comments.length) * 10) / 10;
+    } else if (typeof seller.userRate === "number") {
+      averageRating = Math.round(seller.userRate * 10) / 10;
+    }
+
+    return sendSuccess(res, { page, pageSize, total, averageRating, items });
+  } catch (err: any) {
+    console.error("getSellerReviews error", err);
+    return sendError(res, 500, "Server error", err?.message);
+  }
+}

@@ -417,3 +417,142 @@ export async function respondNegotiationHandler(req: Request, res: Response) {
     return sendError(res, 400, err?.message || "Error");
   }
 }
+
+// PUT /api/admin/products/:id -> update product (admin or shop owner)
+export async function updateProduct(req: Request, res: Response) {
+  try {
+    const id = req.params.id;
+    if (!id) return sendError(res, 400, "Missing product id");
+
+    const user = (req as any).user;
+    const rawRole =
+      user && typeof user.userRole !== "undefined"
+        ? user.userRole
+        : user && user.role;
+    function resolveRoleCodeLocal(role: any): number {
+      if (typeof role === "number") return Number(role);
+      if (typeof role === "string") {
+        const n = Number(role);
+        if (!Number.isNaN(n)) return n;
+        const key = String(role).toLowerCase();
+        // @ts-ignore
+        const mapped = USER_ROLE_CODE[key];
+        return typeof mapped === "number" ? mapped : NaN;
+      }
+      return NaN;
+    }
+    const roleCode = resolveRoleCodeLocal(rawRole);
+
+    const existing = await ProductModel.findById(id).lean<any>();
+    if (!existing) return sendError(res, 404, "Product not found");
+
+    if (roleCode === USER_ROLE.SHOP) {
+      const shopId = user && user.sub ? String(user.sub) : null;
+      if (!shopId || String(existing.productShopId) !== shopId)
+        return sendError(res, 403, "Forbidden");
+    } else if (roleCode !== USER_ROLE.ADMIN) {
+      return sendError(res, 403, "Insufficient privileges");
+    }
+
+    const body = req.body || {};
+    const allowed = [
+      "productName",
+      "productDescription",
+      "productMedia",
+      "productPrice",
+      "productPriceType",
+      "productQuantity",
+      "productCategory",
+      "productBrand",
+      "productUsageTime",
+      "productNewPercent",
+      "productDamagePercent",
+      "productWarrantyMonths",
+      "productReturnPolicy",
+      "productConditionNote",
+      "productHasOrigin",
+      "productOriginLink",
+      "originProof",
+      "productStatus",
+      "productDeleted",
+    ];
+
+    const updates: any = {};
+    for (const k of allowed) {
+      if (k in body) updates[k] = body[k];
+    }
+
+    if (Object.keys(updates).length === 0)
+      return sendError(res, 400, "No updatable fields provided");
+
+    const updated = await ProductModel.findByIdAndUpdate(
+      id,
+      { $set: updates },
+      { new: true }
+    ).lean<any>();
+
+    return sendSuccess(res, updated);
+  } catch (err: any) {
+    console.error("updateProduct error", err);
+    return sendError(res, 500, "Internal error", err?.message);
+  }
+}
+
+// POST /api/admin/products/:id/hide -> set productDeleted flag (admin or shop owner)
+export async function setProductDeleted(req: Request, res: Response) {
+  try {
+    const id = req.params.id;
+    if (!id) return sendError(res, 400, "Missing product id");
+
+    const user = (req as any).user;
+    const rawRole =
+      user && typeof user.userRole !== "undefined"
+        ? user.userRole
+        : user && user.role;
+    function resolveRoleCodeLocal(role: any): number {
+      if (typeof role === "number") return Number(role);
+      if (typeof role === "string") {
+        const n = Number(role);
+        if (!Number.isNaN(n)) return n;
+        const key = String(role).toLowerCase();
+        // @ts-ignore
+        const mapped = USER_ROLE_CODE[key];
+        return typeof mapped === "number" ? mapped : NaN;
+      }
+      return NaN;
+    }
+    const roleCode = resolveRoleCodeLocal(rawRole);
+
+    const existing = await ProductModel.findById(id).lean<any>();
+    if (!existing) return sendError(res, 404, "Product not found");
+
+    if (roleCode === USER_ROLE.SHOP) {
+      const shopId = user && user.sub ? String(user.sub) : null;
+      if (!shopId || String(existing.productShopId) !== shopId)
+        return sendError(res, 403, "Forbidden");
+    } else if (roleCode !== USER_ROLE.ADMIN) {
+      return sendError(res, 403, "Insufficient privileges");
+    }
+
+    const d = req.body?.deleted;
+    let val = 1;
+    if (typeof d !== "undefined") {
+      const n = Number(d);
+      val = Number.isNaN(n) ? 1 : n;
+    }
+
+    const updated = await ProductModel.findByIdAndUpdate(
+      id,
+      { $set: { productDeleted: val } },
+      { new: true }
+    ).lean<any>();
+
+    return sendSuccess(res, {
+      id: String(id),
+      productDeleted: updated?.productDeleted,
+    });
+  } catch (err: any) {
+    console.error("setProductDeleted error", err);
+    return sendError(res, 500, "Internal error", err?.message);
+  }
+}

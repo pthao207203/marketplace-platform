@@ -1,3 +1,5 @@
+import NegotiationModel from "../../models/negotiation.model";
+import { NEGOTIATION_STATUS } from "../../constants/product.constants";
 import type { Request, Response } from "express";
 import { Types, default as mongoose } from "mongoose";
 import { sendSuccess, sendError } from "../../utils/response";
@@ -228,6 +230,59 @@ export async function previewOrder(req: Request, res: Response) {
     const proms = normalized.map((it) => findProductById(it.productId));
     const prods = await Promise.all(proms);
 
+    // If this preview is for a negotiation payment reference, try to load the negotiation
+    // Accept both formats: "NEGOTIATION-<id>" and raw 24-hex ObjectId string
+    let negotiationOverride: any = null;
+    try {
+      const paymentRef = String((body as any).paymentReference || "").trim();
+      let nid: string | null = null;
+      if (paymentRef.startsWith("NEGOTIATION-"))
+        nid = paymentRef.replace("NEGOTIATION-", "");
+      else if (/^[a-fA-F0-9]{24}$/.test(paymentRef)) nid = paymentRef;
+      console.log("previewOrder: paymentRef", paymentRef, "nid", nid);
+      if (nid) {
+        const neg = await NegotiationModel.findById(nid).lean<any>();
+        if (neg && Number(neg.status) === NEGOTIATION_STATUS.ACCEPTED) {
+          negotiationOverride = neg;
+        }
+      }
+      // Fallback: if no paymentReference given or it didn't resolve to a negotiation id,
+      // try to find an accepted negotiation for the current buyer + any item productId.
+      if (
+        !negotiationOverride &&
+        Array.isArray(normalized) &&
+        normalized.length
+      ) {
+        try {
+          for (const it of normalized) {
+            if (!it || !it.productId) continue;
+            const candidate = await NegotiationModel.findOne({
+              productId: it.productId,
+              buyerId: new Types.ObjectId(String(userId)),
+              status: NEGOTIATION_STATUS.ACCEPTED,
+            })
+              .sort({ acceptedAt: -1, updatedAt: -1 })
+              .lean<any>();
+            if (candidate) {
+              negotiationOverride = candidate;
+              console.log(
+                "previewOrder: fallback found negotiation",
+                String(candidate._id),
+                "for product",
+                it.productId
+              );
+              break;
+            }
+          }
+        } catch (e) {
+          // non-fatal
+          console.warn("previewOrder: negotiation fallback search failed", e);
+        }
+      }
+    } catch (e) {
+      // non-fatal
+    }
+
     // If this request originated from an auction payload, override the
     // product price with the auction final price so buyer is charged correctly.
     if ((body as any).__auctionFinalPrice) {
@@ -252,8 +307,22 @@ export async function previewOrder(req: Request, res: Response) {
       const p = prods[i] as any;
       if (!p) continue;
 
-      const price = typeof p.productPrice === "number" ? p.productPrice : 0;
-      const qty = it.qty || 1;
+      // If negotiation override applies and this item matches the negotiation's product,
+      // use the negotiated price and quantity instead of the product's listed price.
+      let price = typeof p.productPrice === "number" ? p.productPrice : 0;
+      let qty = it.qty || 1;
+      console.log("previewOrder item", i, "productId", it.productId);
+      console.log("  base price", price, "qty", qty);
+      console.log("  negotiationOverride", negotiationOverride);
+      if (
+        negotiationOverride &&
+        String(negotiationOverride.productId) === String(it.productId)
+      ) {
+        console.log(negotiationOverride.offeredPrice);
+        price = Number(negotiationOverride.offeredPrice || price);
+        qty = Number(negotiationOverride.quantity || qty);
+      }
+
       const lineTotal = price * qty;
       totalPrice += lineTotal;
 
@@ -358,27 +427,44 @@ export async function placeOrder(req: Request, res: Response) {
       if (!auction) return sendError(res, 400, "Auction not found");
 
       // Only allow the auction winner to place the order for that auction
-      if (!auction.finalWinnerId || String(auction.finalWinnerId) !== String(userId)) {
+      if (
+        !auction.finalWinnerId ||
+        String(auction.finalWinnerId) !== String(userId)
+      ) {
         return sendError(res, 403, "Only auction winner may place this order");
       }
 
       // Find related product
-      const auctionProduct = await ProductModel.findOne({ 'productAuction.auctionId': auction._id }).lean();
-      if (!auctionProduct) return sendError(res, 400, "Product for auction not found");
+      const auctionProduct = await ProductModel.findOne({
+        "productAuction.auctionId": auction._id,
+      }).lean();
+      if (!auctionProduct)
+        return sendError(res, 400, "Product for auction not found");
 
       // Build minimal items payload for the existing flow
-      body.items = [{ productId: String((auctionProduct as any)._id), qty: auction.quantity || 1 }];
+      body.items = [
+        {
+          productId: String((auctionProduct as any)._id),
+          qty: auction.quantity || 1,
+        },
+      ];
 
       // Persist the auction final price so we can override the product price later
-      (body as any).__auctionFinalPrice = Number(auction.finalPrice || auction.currentPrice || 0);
+      (body as any).__auctionFinalPrice = Number(
+        auction.finalPrice || auction.currentPrice || 0
+      );
 
       // Default payment method to wallet if not provided
       if (!body.paymentMethod) body.paymentMethod = PAYMENT_METHOD.WALLET;
 
       // If shipping address not provided, attempt to use user's default address
       if (!body.shippingAddressId && !body.shippingAddress) {
-        const u = await UserModel.findById(String(userId)).select('userAddress').lean<any>();
-        const def = (u?.userAddress || []).find((a: any) => a.isDefault) || (u?.userAddress && u.userAddress[0]);
+        const u = await UserModel.findById(String(userId))
+          .select("userAddress")
+          .lean<any>();
+        const def =
+          (u?.userAddress || []).find((a: any) => a.isDefault) ||
+          (u?.userAddress && u.userAddress[0]);
         if (def) body.shippingAddressId = def._id;
       }
     }
@@ -416,9 +502,70 @@ export async function placeOrder(req: Request, res: Response) {
     if (missing.length)
       return sendError(res, 400, "Some products not found", { missing });
 
+    // If this order is for a negotiation (paymentReference could be plain id or NEGOTIATION-<id>),
+    // load the negotiation and enforce the negotiated price/qty for the matching item.
+    let negotiationOverride: any = null;
+    try {
+      const paymentRef = String((body as any).paymentReference || "").trim();
+      let nid: string | null = null;
+      if (paymentRef.startsWith("NEGOTIATION-"))
+        nid = paymentRef.replace("NEGOTIATION-", "");
+      else if (/^[a-fA-F0-9]{24}$/.test(paymentRef)) nid = paymentRef;
+
+      if (nid) {
+        const neg = await NegotiationModel.findById(nid).lean<any>();
+        if (!neg) return sendError(res, 400, "Negotiation not found");
+        if (Number(neg.status) !== NEGOTIATION_STATUS.ACCEPTED)
+          return sendError(res, 400, "Negotiation is not accepted for payment");
+        negotiationOverride = neg;
+      }
+      // Fallback: if FE didn't send a paymentReference, try to find an accepted negotiation
+      // for this buyer and any of the requested products.
+      if (
+        !negotiationOverride &&
+        Array.isArray(normalized) &&
+        normalized.length
+      ) {
+        try {
+          for (const it of normalized) {
+            if (!it || !it.productId) continue;
+            const candidate = await NegotiationModel.findOne({
+              productId: it.productId,
+              buyerId: new Types.ObjectId(String(userId)),
+              status: NEGOTIATION_STATUS.ACCEPTED,
+            })
+              .sort({ acceptedAt: -1, updatedAt: -1 })
+              .lean<any>();
+            if (candidate) {
+              negotiationOverride = candidate;
+              console.log(
+                "placeOrder: fallback found negotiation",
+                String(candidate._id),
+                "for product",
+                it.productId
+              );
+              break;
+            }
+          }
+        } catch (e) {
+          console.warn("placeOrder: negotiation fallback search failed", e);
+        }
+      }
+    } catch (e) {
+      console.warn("load negotiation failed", e);
+    }
+
     for (let i = 0; i < normalized.length; i++) {
       const p = prods[i] as any;
-      const qty = normalized[i].qty;
+      let qty = normalized[i].qty;
+      // apply negotiation quantity if override applies to this product
+      if (
+        negotiationOverride &&
+        String(negotiationOverride.productId) ===
+          String(normalized[i].productId)
+      ) {
+        qty = Number(negotiationOverride.quantity || qty);
+      }
       if (p.productQuantity < qty) {
         return sendError(
           res,
@@ -433,8 +580,18 @@ export async function placeOrder(req: Request, res: Response) {
       const it = normalized[i];
       const p = prods[i] as any;
 
-      const price = typeof p.productPrice === "number" ? p.productPrice : 0;
-      const qty = it.qty || 1;
+      // default price/qty from product
+      let price = typeof p.productPrice === "number" ? p.productPrice : 0;
+      let qty = it.qty || 1;
+      // apply negotiation override if applicable
+      if (
+        negotiationOverride &&
+        String(negotiationOverride.productId) === String(it.productId)
+      ) {
+        price = Number(negotiationOverride.offeredPrice || price);
+        qty = Number(negotiationOverride.quantity || qty);
+      }
+
       const lineTotal = price * qty;
 
       const imageUrl = Array.isArray(p.productMedia)
@@ -582,6 +739,51 @@ export async function placeOrder(req: Request, res: Response) {
       });
     } finally {
       session.endSession();
+    }
+
+    // After successful transaction: if any inserted orders are linked to negotiations,
+    // mark those negotiations as purchased when payment status is PAID
+    try {
+      for (const od of inserted) {
+        const ref = String(
+          od.orderPaymentReference || od.paymentReference || ""
+        ).trim();
+        let negId: string | null = null;
+        if (ref.startsWith("NEGOTIATION-"))
+          negId = ref.replace("NEGOTIATION-", "");
+        else if (/^[a-fA-F0-9]{24}$/.test(ref)) negId = ref;
+
+        if (negId && od.orderPaymentStatus === PAYMENT_STATUS.PAID) {
+          await NegotiationModel.findByIdAndUpdate(negId, {
+            status: NEGOTIATION_STATUS.PURCHASED,
+            purchasedAt: new Date(),
+          });
+        }
+      }
+    } catch (e) {
+      console.warn(
+        "Failed to mark negotiation purchased after wallet payment",
+        e
+      );
+    }
+
+    // If we used a negotiation override (fallback or explicit) for this placeOrder,
+    // mark that negotiation as PURCHASED as the buyer has just placed the order.
+    try {
+      if (negotiationOverride && negotiationOverride._id) {
+        await NegotiationModel.findByIdAndUpdate(
+          String(negotiationOverride._id),
+          {
+            status: NEGOTIATION_STATUS.PURCHASED,
+            purchasedAt: new Date(),
+          }
+        );
+      }
+    } catch (e) {
+      console.warn(
+        "Failed to mark negotiation purchased for negotiationOverride",
+        e
+      );
     }
 
     return sendSuccess(
@@ -844,38 +1046,53 @@ export async function updateOrderShipping(req: Request, res: Response) {
     const shippingAddressObj = body.shippingAddress;
 
     if (!shippingAddressId && !shippingAddressObj)
-      return sendError(res, 400, "Missing shipping address or shippingAddressId");
+      return sendError(
+        res,
+        400,
+        "Missing shipping address or shippingAddressId"
+      );
 
     const order: any = await OrderModel.findById(orderId).lean();
     if (!order) return sendError(res, 404, "Order not found");
-    if (String(order.orderBuyerId) !== String(userId)) return sendError(res, 403, "Forbidden");
+    if (String(order.orderBuyerId) !== String(userId))
+      return sendError(res, 403, "Forbidden");
 
     // Only allow updating shipping for orders created from auctions (optional guard)
     if (
       order.orderPaymentReference &&
-      typeof order.orderPaymentReference === 'string' &&
-      !order.orderPaymentReference.startsWith('AUCTION-')
+      typeof order.orderPaymentReference === "string" &&
+      !order.orderPaymentReference.startsWith("AUCTION-")
     ) {
       // still allow update for regular orders, but if you want to restrict to auctions remove this block
     }
 
     let shippingAddress: any = null;
     if (shippingAddressId) {
-      const u = await UserModel.findById(String(userId)).select('userAddress').lean<any>();
-      shippingAddress = (u?.userAddress || []).find((a: any) => String(a._id) === String(shippingAddressId)) || null;
-      if (!shippingAddress) return sendError(res, 400, 'Shipping address not found');
-    } else if (shippingAddressObj && typeof shippingAddressObj === 'object') {
+      const u = await UserModel.findById(String(userId))
+        .select("userAddress")
+        .lean<any>();
+      shippingAddress =
+        (u?.userAddress || []).find(
+          (a: any) => String(a._id) === String(shippingAddressId)
+        ) || null;
+      if (!shippingAddress)
+        return sendError(res, 400, "Shipping address not found");
+    } else if (shippingAddressObj && typeof shippingAddressObj === "object") {
       shippingAddress = shippingAddressObj;
     }
 
-    if (!shippingAddress) return sendError(res, 400, 'Invalid shipping address');
+    if (!shippingAddress)
+      return sendError(res, 400, "Invalid shipping address");
 
-    await OrderModel.updateOne({ _id: orderId }, { $set: { orderShippingAddress: shippingAddress } });
+    await OrderModel.updateOne(
+      { _id: orderId },
+      { $set: { orderShippingAddress: shippingAddress } }
+    );
 
     const updated = await OrderModel.findById(orderId).lean();
     return sendSuccess(res, { order: updated });
   } catch (err: any) {
-    console.error('updateOrderShipping error', err);
-    return sendError(res, 500, 'Server error', err?.message);
+    console.error("updateOrderShipping error", err);
+    return sendError(res, 500, "Server error", err?.message);
   }
 }

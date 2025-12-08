@@ -5,7 +5,6 @@ import type { HomeResponse } from "@acme/shared-types";
 import { PRODUCT_STATUS_LABEL } from "../../constants/product.constants";
 import type { ProductStatusCode } from "../../constants/product.constants";
 import { sendSuccess, sendError } from "../../utils/response";
-
 import { findProducts, countProducts } from "../../services/product.service";
 import { findProductById } from "../../services/product.service";
 import {
@@ -19,6 +18,7 @@ import { ProductModel, IProduct } from "../../models/product.model"; // Import I
 import { BrandModel } from "../../models/brand.model";
 import { UserModel } from "../../models/user.model";
 import { Types } from "mongoose";
+import NegotiationModel from "../../models/negotiation.model";
 
 export async function getHome(req: Request, res: Response) {
   try {
@@ -632,5 +632,180 @@ export async function getProductDetail(req: Request, res: Response) {
   } catch (err: any) {
     console.error("getProductDetail error", err);
     return sendError(res, 500, "Internal error");
+  }
+}
+// GET /api/me/negotiations?status=sent,accepted,rejected,cancelled&page=&pageSize=
+export async function listMyNegotiations(req: Request, res: Response) {
+  try {
+    const userId = req.user?.sub;
+    if (!userId || !Types.ObjectId.isValid(String(userId)))
+      return sendError(res, 401, "Unauthorized");
+
+    const page = Math.max(1, Number(req.query.page ?? 1));
+    const pageSize = Math.min(
+      100,
+      Math.max(1, Number(req.query.pageSize ?? 20))
+    );
+    const skip = (page - 1) * pageSize;
+
+    const parseMulti = (val: any): string[] => {
+      if (typeof val === "undefined" || val === null) return [];
+      if (Array.isArray(val))
+        return val
+          .flatMap((v) => String(v).split(","))
+          .map((s) => s.trim())
+          .filter(Boolean);
+      return String(val)
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+    };
+
+    const rawStatuses = parseMulti(req.query.status);
+    const statusMap: Record<string, number> = {
+      sent: 1, // pending
+      pending: 1,
+      accepted: 2,
+      rejected: 3,
+      cancelled: 4,
+      purchased: 5,
+    };
+    const statuses: number[] = [];
+    for (const s of rawStatuses) {
+      const key = String(s).toLowerCase();
+      if (statusMap[key]) statuses.push(statusMap[key]);
+      else {
+        const n = Number(s);
+        if (!Number.isNaN(n)) statuses.push(n);
+      }
+    }
+
+    const filter: any = {
+      $or: [{ buyerId: String(userId) }, { sellerId: String(userId) }],
+    };
+    if (statuses.length) filter.status = { $in: statuses };
+
+    const [itemsRaw, total] = await Promise.all([
+      NegotiationModel.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(pageSize)
+        .lean(),
+      NegotiationModel.countDocuments(filter),
+    ]);
+
+    const productIds = Array.from(
+      new Set(
+        (itemsRaw || []).map((n: any) => String(n.productId)).filter(Boolean)
+      )
+    );
+    const userIds = Array.from(
+      new Set(
+        (itemsRaw || [])
+          .flatMap((n: any) => [String(n.buyerId), String(n.sellerId)])
+          .filter(Boolean)
+      )
+    );
+
+    const [products, users] = await Promise.all([
+      productIds.length
+        ? ProductModel.find({ _id: { $in: productIds } })
+            .select("productName productMedia")
+            .lean()
+        : Promise.resolve([]),
+      userIds.length
+        ? UserModel.find({ _id: { $in: userIds } })
+            .select("_id userName userAvatar")
+            .lean()
+        : Promise.resolve([]),
+    ]);
+
+    const prodMap: Record<string, any> = {};
+    for (const p of products) prodMap[String(p._id)] = p;
+    const userMap: Record<string, any> = {};
+    for (const u of users) userMap[String(u._id)] = u;
+
+    // fetch current user basic info so we can include it in each item
+    let currentUser: any = null;
+    try {
+      const cu = await UserModel.findById(String(userId))
+        .select("userName userAvatar")
+        .lean<any>();
+      if (cu)
+        currentUser = {
+          id: String(cu._id),
+          name: cu.userName,
+          avatar: cu.userAvatar,
+        };
+    } catch (e) {
+      // non-fatal
+    }
+
+    const items = await Promise.all(
+      (itemsRaw || []).map(async (n: any) => {
+        // prefer stored attemptNumber if available, otherwise compute fallback
+        let attemptNumber: number;
+        if (typeof n.attemptNumber === "number") {
+          attemptNumber = Number(n.attemptNumber);
+        } else {
+          const attempt = await NegotiationModel.countDocuments({
+            productId: n.productId,
+            buyerId: n.buyerId,
+            createdAt: { $lt: n.createdAt },
+          });
+          attemptNumber = Number(attempt) + 1;
+        }
+
+        return {
+          id: String(n._id),
+          productId: n.productId ? String(n.productId) : undefined,
+          productName: n.productId
+            ? prodMap[String(n.productId)]?.productName
+            : undefined,
+          productImage: n.productId
+            ? prodMap[String(n.productId)] &&
+              Array.isArray(prodMap[String(n.productId)].productMedia)
+              ? prodMap[String(n.productId)].productMedia[0]
+              : undefined
+            : undefined,
+          offeredPrice: n.offeredPrice,
+          quantity: typeof n.quantity === "number" ? n.quantity : undefined,
+          status: n.status,
+          createdAt: n.createdAt
+            ? new Date(n.createdAt).toISOString()
+            : undefined,
+          acceptedAt: n.acceptedAt
+            ? new Date(n.acceptedAt).toISOString()
+            : undefined,
+          rejectedAt: n.rejectedAt
+            ? new Date(n.rejectedAt).toISOString()
+            : undefined,
+          attemptNumber,
+          isBuyer: String(n.buyerId) === String(userId),
+          currentUser,
+          counterpart:
+            String(n.buyerId) === String(userId)
+              ? userMap[String(n.sellerId)]
+                ? {
+                    id: String(n.sellerId),
+                    name: userMap[String(n.sellerId)].userName,
+                    avatar: userMap[String(n.sellerId)].userAvatar,
+                  }
+                : { id: String(n.sellerId) }
+              : userMap[String(n.buyerId)]
+              ? {
+                  id: String(n.buyerId),
+                  name: userMap[String(n.buyerId)].userName,
+                  avatar: userMap[String(n.buyerId)].userAvatar,
+                }
+              : { id: String(n.buyerId) },
+        };
+      })
+    );
+
+    return sendSuccess(res, { page, pageSize, total, items });
+  } catch (err: any) {
+    console.error("listMyNegotiations error", err);
+    return sendError(res, 500, "Server error", err?.message);
   }
 }
