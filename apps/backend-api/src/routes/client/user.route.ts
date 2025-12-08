@@ -1,6 +1,10 @@
 import { Router } from "express";
 import { requireClientAuth } from "../../middlewares/auth.middleware";
-import { addToCart,removeFromCart, viewCart } from "../../controllers/client/cart.controller";
+import {
+  addToCart,
+  removeFromCart,
+  viewCart,
+} from "../../controllers/client/cart.controller";
 import {
   getMyProfile,
   listAddresses,
@@ -15,6 +19,7 @@ import {
   getTopupHistory,
   getPurchaseHistory,
   getReceivedHistory,
+  getSellerReviews,
 } from "../../controllers/client/user.controller";
 import {
   listBanks,
@@ -36,6 +41,9 @@ router.get("/", requireClientAuth, getMyProfile);
 router.get("/profile", requireClientAuth, getProfileForEdit);
 router.patch("/profile", requireClientAuth, patchProfile);
 router.patch("/password", requireClientAuth, patchPassword);
+
+// Review
+router.get("/seller/:id/reviews", getSellerReviews);
 
 // Addresses
 router.get("/addresses", requireClientAuth, listAddresses);

@@ -1,93 +1,138 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import Chart from "react-apexcharts";
 import type { ApexOptions } from "apexcharts";
-import { useState } from "react";
+import { FilterParams } from "./Filter";
 
-export default function MonthlySalesChart() {
-  const [period, setPeriod] = useState<"month" | "quarter" | "year">("month");
-  const dataMap = {
-    month: {
-      categories: [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
-      ],
-      series: [168, 385, 201, 298, 187, 195, 291, 110, 215, 390, 280, 112]
-    },
-    quarter: {
-      categories: ["Quarter1", "Quarter2", "Quarter3", "Quarter4"],
-      series: [754, 678, 602, 782]
-    },
-    year: {
-      categories: ["2021", "2022", "2023", "2024", "2025"],
-      series: [2800, 3200, 3500, 3700, 4000]
-    }
-  };
+interface SalesChartProps {
+  filter: FilterParams;
+}
+
+export default function SalesChart({ filter }: SalesChartProps) {
+
+  const [salesData, setSalesData] = useState<number[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchSales = async () => {
+      try {
+        setLoading(true); 
+
+        const query = new URLSearchParams({
+            type: filter.type,
+            year: filter.year.toString(),
+            ...(filter.month !== undefined && { month: filter.month.toString() }),
+            ...(filter.startDate && { startDate: filter.startDate }),
+            ...(filter.endDate && { endDate: filter.endDate }),
+        }).toString();
+        
+        const API_URL = `/admin/dashboard/monthly-sales?${query}`;
+        
+        const res = await fetch(API_URL, {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include", 
+        });
+
+        if (!res.ok) throw new Error("API Error");
+
+        const json = await res.json();
+        
+        if (json.success) {
+          
+          const data = json.data?.sales || Array(12).fill(0);
+          setSalesData(data);
+        }
+      } catch (error) {
+        console.error("Failed to fetch monthly sales", error);
+        setSalesData(Array(12).fill(0));
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchSales();
+    
+  }, [filter]);
 
   const options: ApexOptions = {
-    colors: ["#f25c05ff"],  
     chart: {
-      fontFamily: "Outfit, sans-serif",
       type: "bar",
-      height: 180,
-      toolbar: { show: false }
+      toolbar: { show: false },
+      fontFamily: "Inter, sans-serif",
     },
     plotOptions: {
       bar: {
-        horizontal: false,
-        columnWidth: "39%",
-        borderRadius: 5,
-        borderRadiusApplication: "end"
-      }
+        borderRadius: 4,
+        borderRadiusApplication: "end", 
+        columnWidth: "60%", 
+      },
     },
+    colors: ["#FBBF24"], 
     dataLabels: { enabled: false },
-    stroke: { show: true, width: 4, colors: ["transparent"] },
-    xaxis: { 
-      categories: dataMap[period].categories,
-      axisBorder: { show: false },
-      axisTicks: { show: false }
-    },
-    legend: {
+    grid: {
       show: true,
-      position: "top",
-      horizontalAlign: "left",
-      fontFamily: "Outfit"
+      strokeDashArray: 4, 
+      yaxis: { lines: { show: true } },
+      xaxis: { lines: { show: false } },
+      padding: { top: 0, right: 0, bottom: 0, left: 10 },
     },
-    yaxis: { title: { text: undefined } },
-    grid: { yaxis: { lines: { show: true } } },
-    fill: { opacity: 1 },
-    tooltip: { x: { show: false }, y: { formatter: (val: number) => `${val}` } },
+    xaxis: {
+      categories: [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", 
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+      ],
+      axisBorder: { show: false },
+      axisTicks: { show: false },
+      labels: {
+        style: { colors: "#9CA3AF", fontSize: "12px", fontWeight: 500 },
+      },
+    },
+    yaxis: {
+      show: true,
+      labels: {
+        style: { colors: "#9CA3AF", fontSize: "12px", fontWeight: 500 },
+        formatter: (val) => val.toFixed(0), 
+        offsetX: -10,
+      },
+    },
+    tooltip: {
+      enabled: true,
+      y: {
+        formatter: (val) => `${val} Triệu VND`, 
+      },
+    },
   };
 
-  const series = [{ name: "Sales", data: dataMap[period].series }];
+  const series = [
+    {
+      name: "Doanh thu",
+      data: salesData,
+    },
+  ];
+
+  if (loading) {
+    return (
+      <div className="w-auto h-full flex items-center justify-center bg-white rounded-xl border border-gray-200 min-h-[350px] animate-pulse">
+        <span className="text-gray-400 font-medium">Đang tải dữ liệu...</span>
+      </div>
+    );
+  }
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white px-5 pt-5 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6 sm:pt-6">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-gray-800 dark:text-gray/90">
-          Sales chart
+    <div className="w-auto h-full flex flex-col bg-white rounded-xl px-[20px] py-[20px] border border-gray-200 shadow-sm">
+      <div className="mb-6">
+        <h3 className="text-[18px] max-md:text-[16px] font-bold text-[#441A02]">
+          Biểu đồ thống kê doanh thu
         </h3>
-
-        {/* Dropdown 3 option: Month / Quarter / Year */}
-        <div className="flex items-center space-x-2">
-          {["month", "quarter", "year"].map((p) => (
-            <button
-              key={p}
-              className={`px-3 py-1 rounded ${
-                period === p ? "bg-blue-500 text-white" : "bg-gray-200 text-gray-700"
-              }`}
-              style={period === p ? { backgroundColor: "#DA5305" } : undefined}
-              onClick={() => setPeriod(p as "month" | "quarter" | "year")}
-            >
-              {p === "month" ? "MONTH" : p === "quarter" ? "QUARTER" : "YEAR"}
-            </button>
-          ))}
-
-        </div>
+        <p className="text-sm text-gray-500 mt-1">
+          Đơn vị tính: Triệu VNĐ
+        </p>
       </div>
 
-      <div className="max-w-full overflow-x-auto custom-scrollbar">
-        <div className="-ml-5 min-w-[650px] xl:min-w-full pl-2">
-          <Chart options={options} series={series} type="bar" height={180} />
-        </div>
+      <div className="h-[300px] w-full">
+        <Chart options={options} series={series} type="bar" height="100%" />
       </div>
     </div>
   );

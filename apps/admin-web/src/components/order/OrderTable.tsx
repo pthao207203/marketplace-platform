@@ -1,118 +1,204 @@
-import React from 'react';
-import type { Order } from './sampleData'; 
-
+import React, { useState } from 'react';
+import { Order, confirmOrder, cancelOrder } from '../../services/api.service';
+import { Link } from 'react-router-dom';
 
 const PaymentIcon = ({ paid }: { paid: boolean }) => (
-    <div className={`size-3 rounded-full mx-auto ${paid ? 'bg-orange-500' : 'border border-gray-400'}`}></div>
+    <div
+        className={`size-3 rounded-full mx-auto ${
+            paid ? 'bg-orange-500' : 'border border-gray-400'
+        }`}
+    ></div>
 );
 
 interface OrderTableProps {
-  orders: Order[]; 
+    orders: Order[];
+    onRefresh?: () => void; // Callback để refresh data sau khi confirm/cancel
 }
 
-const OrderTable: React.FC<OrderTableProps> = ({ orders }) => {
+const OrderTable: React.FC<OrderTableProps> = ({ orders, onRefresh }) => {
+    const [processingOrderId, setProcessingOrderId] = useState<string | null>(null);
 
-  const getStatusBadge = (status: Order['Status']) => {
-    let colorClasses = 'bg-gray-200 text-gray-800'; 
-    switch (status) {
-      case 'Pending':
-        colorClasses = 'bg-blue-100 text-blue-700'; 
-        break;
-      case 'Processing':
-        colorClasses = 'bg-yellow-100 text-yellow-700';
-        break;
-      case 'Cancelled':
-        colorClasses = 'bg-orange-100 text-orange-700'; 
-        break;
-      case 'Delivering':
-        colorClasses = 'bg-pink-100 text-pink-700';
-        break;
-      case 'Delivered':
-        colorClasses = 'bg-green-100 text-green-700';
-        break;
-      case 'Returned':
-        colorClasses = 'bg-purple-100 text-purple-700';
-        break;
-      case 'Complaints':
-        colorClasses = 'bg-red-100 text-red-700'; 
-        break;
+    const getStatusBadge = (status: Order['status']) => {
+        let color = '';
+        let label = '';
+        
+        switch (status) {
+            case 'Pending':
+                color = 'bg-blue-100 text-blue-700';
+                label = 'Chờ xác nhận';
+                break;
+            case 'Cancelled':
+                color = 'bg-orange-100 text-orange-700';
+                label = 'Đã hủy';
+                break;
+            case 'Delivering':
+                color = 'bg-pink-100 text-pink-700';
+                label = 'Đang giao';
+                break;
+            case 'Delivered':
+                color = 'bg-green-100 text-green-700';
+                label = 'Đã giao';
+                break;
+            case 'Returned':
+                color = 'bg-purple-100 text-purple-700';
+                label = 'Trả hàng';
+                break;
+            default:
+                color = 'bg-gray-100 text-gray-700';
+                label = status;
+        }
+        
+        return (
+            <span
+                className={`px-[20px] py-[5px] rounded-full text-[16px] font-normal ${color}`}
+            >
+                {label}
+            </span>
+        );
+    };
+
+    const formatCurrency = (amount: number) => {
+        // ⚠️ FIX: Handle undefined/null amount
+        if (amount === undefined || amount === null || isNaN(amount)) {
+            return '0 VNĐ';
+        }
+        return amount.toLocaleString('vi-VN') + ' VNĐ';
+    };
+
+    const formatDate = (dateStr: string) => {
+        if (!dateStr) return '';
+        const date = new Date(dateStr);
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = date.getFullYear();
+        return `${day}/${month}/${year}`;
+    };
+
+    /*
+    const handleConfirmOrder = async (orderId: string) => {
+        if (!confirm('Bạn có chắc muốn xác nhận đơn hàng này?')) return;
+
+        try {
+            setProcessingOrderId(orderId);
+            await confirmOrder(orderId);
+            alert('Xác nhận đơn hàng thành công!');
+            
+            // Refresh data
+            if (onRefresh) onRefresh();
+        } catch (error: any) {
+            console.error('Error confirming order:', error);
+            alert(error.response?.data?.error?.message || 'Lỗi khi xác nhận đơn hàng');
+        } finally {
+            setProcessingOrderId(null);
+        }
+    };
+    */
+
+    /*
+    const handleCancelOrder = async (orderId: string) => {
+        const reason = prompt('Nhập lý do hủy đơn (tùy chọn):');
+        if (reason === null) return; // User clicked Cancel
+
+        try {
+            setProcessingOrderId(orderId);
+            await cancelOrder(orderId, reason);
+            alert('Hủy đơn hàng thành công!');
+            
+            // Refresh data
+            if (onRefresh) onRefresh();
+        } catch (error: any) {
+            console.error('Error cancelling order:', error);
+            alert(error.response?.data?.error?.message || 'Lỗi khi hủy đơn hàng');
+        } finally {
+            setProcessingOrderId(null);
+        }
+    };
+    */
+
+    if (orders.length === 0) {
+        return (
+            <div className="text-center py-10 text-[#441A02]">
+                Không tìm thấy đơn hàng nào.
+            </div>
+        );
     }
+
     return (
-        <span className={`px-2 py-0.5 inline-flex text-xs leading-5 font-medium rounded-full ${colorClasses}`}>
-          {status === 'Pending' ? 'Pending' : status === 'Processing' ? 'Processing' : status}
-        </span>
+        <div className="bg-none rounded-[16px] overflow-hidden text-[18px] max-md:text-[16px] font-normal text-[#441A02]">
+            <div className="w-full overflow-x-auto">
+                <table className="w-full table-fixed">
+                    {/* Header */}
+                    <thead className="border-b-[10px] border-[#F9FAFB] bg-white">
+                        <tr className="text-center">
+                            <th className="w-3/12 py-[15px] font-bold">Order ID</th>
+                            <th className="w-2/12 py-[15px] font-bold bg-[#FFF7F3]">Creation Date</th>
+                            <th className="w-2/12 py-[15px] font-bold">Status</th>
+                            <th className="w-3/12 py-[15px] font-bold bg-[#FFF7F3]">Total</th>
+                            <th className="w-2/12 py-[15px] font-bold ">Paid</th>
+                            {/* <th className="py-[15px] font-bold">Act</th> */}
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        {orders.map((order) => (
+                            <tr
+                                key={order.id}
+                                className="hover:bg-[#8ECAE6]/30 bg-white"
+                            >
+                                <td className="p-[10px] text-center font-medium">
+                                  <Link 
+                                     to={`/listoforder/${order.id}`}
+                                      className="text-[#611A02] hover:underline"
+                                  >
+                                      #{order.orderId}
+                                  </Link>
+                                  </td>
+
+                                <td className="p-[10px] text-center">
+                                    {formatDate(order.creationDate)}
+                                </td>
+
+                                {/* Status */}
+                                <td className="p-[10px] text-center">
+                                    {getStatusBadge(order.status)}
+                                </td>
+
+                                {/* Total */}
+                                <td className="p-[10px] text-center">
+                                    <div className="font-medium">
+                                        {formatCurrency(order.totalPrice)}
+                                    </div>
+                                    <div className="text-[14px]">{order.totalItems} products</div>
+                                </td>
+
+                                {/* Paid */}
+                                <td className="p-[10px] text-center">
+                                    <PaymentIcon
+                                        paid={order.paymentStatus === 'Paid'}
+                                    />
+                                </td>
+
+                                {/* Actions */}
+                                {/*
+                                <td className="p-[10px] text-center">
+                                    {order.canConfirm && (
+                                        <button 
+                                            onClick={() => handleConfirmOrder(order.id)}
+                                            disabled={processingOrderId === order.id}
+                                            className="bg-[#F25C05] text-white text-[16px] font-normal py-[5px] px-[20px] rounded-full hover:bg-orange-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            {processingOrderId === order.id ? 'Processing...' : 'Accept'}
+                                        </button>
+                                    )}
+                                </td>
+                                */}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
     );
-  };
-
-  const formatCurrency = (amount: number) => {
-    return amount.toLocaleString('vi-VN') + ' VNĐ';
-  };
-  
-  if (orders.length === 0) {
-    return <div className="text-center py-10 text-gray-500">No orders found.</div>;
-  }
-
-  return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-        <thead className="bg-gray-50 dark:bg-white/[0.05]">
-          <tr>
-            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">ORDER ID</th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">CREATION DATE</th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">COMPLETION DATE</th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">STATUS</th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">TOTAL</th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">PAID</th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">ACT</th>
-          </tr>
-        </thead>
-        <tbody className="bg-white divide-y divide-gray-200 dark:bg-transparent dark:divide-gray-700">
-          {orders.map((order) => (
-            <tr key={order.Orderid} className="hover:bg-gray-50 dark:hover:bg-white/5 transition duration-150">
-              
-              <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">
-                <div className="flex items-start space-x-2">
-                    
-                    <div>
-                        <div className="text-xs font-medium text-gray-700">#{order.Orderid}</div>
-                        
-                    </div>
-                </div>
-              </td> 
-
-              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700 dark:text-gray-700">{order.CreationDate}</td>
-              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700 dark:text-gray-700">
-                {order.Status === 'Delivered' ? order.CompletionDate || '10/02/2025' : ''}
-                {order.Status === 'Returned' ? order.CompletionDate || '10/02/2025' : ''}
-                {order.Status === 'Complaints' ? order.CompletionDate || '10/02/2025' : ''}
-              </td>
-
-              <td className="px-4 py-3 whitespace-nowrap text-sm">{getStatusBadge(order.Status)}</td>
-              
-              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 dark:text-gray">
-                <div className="font-medium">{formatCurrency(order.TotalPrice)}</div>
-                <div className="text-xs text-gray-700 dark:text-gray-700">{order.TotalItems} products</div>
-              </td>
-              
-              <td className="px-4 py-3 whitespace-nowrap text-center align-middle">
-                <div className="flex justify-center items-center h-full">
-                  <PaymentIcon paid={order.PaymentStatus === 'Paid'} />
-                </div>
-              </td>
-              
-              <td className="px-4 py-3 whitespace-nowrap text-center align-middle">
-                {order.CanConfirm && (
-                  <button className="bg-orange-500 text-white text-xs font-semibold py-1 px-3 rounded-lg hover:bg-orange-600 transition">
-                    Accept
-                  </button>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
 };
 
 export default OrderTable;

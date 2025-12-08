@@ -59,3 +59,10 @@ export { default as ChatIcon }        from "./chat.svg?react";
 export { default as MoreDotIcon }     from "./moredot.svg?react";
 export { default as AlertHexaIcon }   from "./alert-hexa.svg?react";
 export { default as ErrorHexaIcon }   from "./info-hexa.svg?react";
+export { default as File_Document }   from "./file-document.svg?react";
+export { default as Credit_Card_01 }  from "./credit-card-01.svg?react";
+export { default as Data }            from "./data.svg?react";
+export { default as Users }           from "./users.svg?react"; 
+export { default as Chat_Circle_Check } from "./chat-circle-check.svg?react";
+export { default as Triangle_Warning } from "./triangle-warning.svg?react";
+

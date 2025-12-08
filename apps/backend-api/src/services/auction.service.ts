@@ -44,3 +44,60 @@ export async function findNearestEndingAuction(filter: any = {}) {
   const docs = await findAuctions(filter, 0, 1);
   return docs && docs.length ? docs[0] : null;
 }
+
+/**
+ * Find auctions where user has placed bids and auction is still active
+ */
+export async function findParticipatedAuctions(
+  userId: string,
+  skip: number = 0,
+  limit: number = 20
+) {
+  const now = new Date();
+  return AuctionModel.find({
+    endsAt: { $gt: now },
+    'bidHistory.userId': userId,
+  })
+    .sort({ endsAt: 1 }) // soonest ending first
+    .skip(skip)
+    .limit(limit)
+    .lean();
+}
+
+/**
+ * Find auctions where user won (is finalWinnerId and finalState is 'paid')
+ */
+export async function findUserWonAuctions(
+  userId: string,
+  skip: number = 0,
+  limit: number = 20
+) {
+  return AuctionModel.find({
+    finalWinnerId: userId,
+    finalState: 'paid',
+  })
+    .sort({ finalizedAt: -1 })
+    .skip(skip)
+    .limit(limit)
+    .lean();
+}
+
+/**
+ * Find auctions where user participated but lost (auction ended, user bid but is not winner)
+ */
+export async function findUserLostAuctions(
+  userId: string,
+  skip: number = 0,
+  limit: number = 20
+) {
+  const now = new Date();
+  return AuctionModel.find({
+    endsAt: { $lte: now },
+    'bidHistory.userId': userId,
+    finalWinnerId: { $ne: userId },
+  })
+    .sort({ endsAt: -1 })
+    .skip(skip)
+    .limit(limit)
+    .lean();
+}

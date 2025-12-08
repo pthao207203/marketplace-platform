@@ -16,7 +16,8 @@ export async function createNegotiation(
   productId: string,
   buyerId: string,
   offeredPrice: number,
-  message?: string
+  message?: string,
+  quantity?: number
 ) {
   // validate product exists and is negotiable
   const p: any = await ProductModel.findById(productId).lean();
@@ -27,12 +28,47 @@ export async function createNegotiation(
   const sellerId = p.productShopId ? String(p.productShopId) : null;
   if (!sellerId) throw new Error("Product has no seller");
 
+  // Check for an existing rejected negotiation to reuse (retry flow)
+  const existing = await NegotiationModel.findOne({
+    productId: new Types.ObjectId(productId),
+    buyerId: new Types.ObjectId(buyerId),
+    sellerId: new Types.ObjectId(sellerId),
+    status: NEGOTIATION_STATUS.REJECTED,
+  })
+    .sort({ updatedAt: -1 })
+    .exec();
+
+  const qty =
+    typeof quantity === "number" && !Number.isNaN(quantity)
+      ? Math.max(1, Math.floor(quantity))
+      : 1;
+
+  if (existing) {
+    const currentAttempts =
+      typeof existing.attemptNumber === "number" ? existing.attemptNumber : 1;
+    if (currentAttempts >= 3) {
+      throw new Error("Maximum number of negotiation attempts reached");
+    }
+    // update existing negotiation instead of creating a new one
+    existing.offeredPrice = offeredPrice;
+    existing.message = message || existing.message;
+    existing.quantity = qty;
+    existing.status = NEGOTIATION_STATUS.PENDING;
+    existing.rejectedAt = undefined;
+    existing.acceptedAt = undefined;
+    existing.attemptNumber = currentAttempts + 1;
+    await existing.save();
+    return existing;
+  }
+
   const doc = await NegotiationModel.create({
     productId: new Types.ObjectId(productId),
     buyerId: new Types.ObjectId(buyerId),
     sellerId: new Types.ObjectId(sellerId),
     offeredPrice,
     message,
+    quantity: qty,
+    attemptNumber: 1,
   });
   return doc;
 }
@@ -144,8 +180,9 @@ export async function respondToNegotiation(
         }
       });
 
-      // success: mark negotiation accepted
+      // success: mark negotiation accepted and set acceptedAt
       n.status = NEGOTIATION_STATUS.ACCEPTED;
+      n.acceptedAt = new Date();
       await n.save();
       return n;
     } catch (err: any) {
@@ -153,6 +190,7 @@ export async function respondToNegotiation(
       if (msg.includes("INSUFFICIENT_FUNDS")) {
         // mark negotiation as rejected due to payment failure
         n.status = NEGOTIATION_STATUS.REJECTED;
+        n.rejectedAt = new Date();
         await n.save();
         throw new Error("Insufficient wallet balance for buyer");
       }
@@ -164,6 +202,7 @@ export async function respondToNegotiation(
     }
   } else {
     n.status = NEGOTIATION_STATUS.REJECTED;
+    n.rejectedAt = new Date();
     await n.save();
     return n;
   }

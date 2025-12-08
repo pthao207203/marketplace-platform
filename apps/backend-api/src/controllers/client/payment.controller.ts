@@ -7,6 +7,8 @@ import { ENV } from "../../config/env";
 import { OrderModel } from "../../models/order.model";
 import { ProductModel } from "../../models/product.model";
 import { UserModel } from "../../models/user.model";
+import NegotiationModel from "../../models/negotiation.model";
+import { NEGOTIATION_STATUS } from "../../constants/product.constants";
 
 import {
   ORDER_STATUS,
@@ -217,6 +219,24 @@ export const callbackZaloPay = async (req: Request, res: Response) => {
             { _id: item.productId },
             { $inc: { productQuantity: -item.qty } }
           );
+        }
+        // If this order was created for a negotiation, mark the negotiation as purchased
+        try {
+          const ref = String(order.orderPaymentReference || "").trim();
+          let negId: string | null = null;
+          if (!ref) negId = null;
+          else if (ref.startsWith("NEGOTIATION-"))
+            negId = ref.replace("NEGOTIATION-", "");
+          else if (/^[a-fA-F0-9]{24}$/.test(ref)) negId = ref;
+
+          if (negId) {
+            await NegotiationModel.findByIdAndUpdate(negId, {
+              status: NEGOTIATION_STATUS.PURCHASED,
+              purchasedAt: new Date(),
+            });
+          }
+        } catch (e) {
+          console.warn("Failed to mark negotiation purchased", e);
         }
       }
     }
