@@ -21,11 +21,30 @@ import {
   requireShopOrAdminAuth,
 } from "../../middlewares/auth.middleware";
 
+// ⚠️ THÊM import fake auth
+import {
+  fakeAdminAuth,
+  fakeShopOrAdminAuth,
+} from "../../middlewares/dev-auth.middleware";
+
 const routeAdmin = (app: Application) => {
   const PATH_ADMIN = systemConfig.prefixAdmin;
 
-  const adminMiddlewares = [requireAdminAuth];
-  const shopOrAdminMiddlewares = [requireShopOrAdminAuth];
+  // ⚠️ CHỌN MIDDLEWARE DỰA TRÊN ENVIRONMENT
+  const isDevelopment = process.env.NODE_ENV === "development" || 
+                        process.env.DEV_MODE === "true";
+
+  // Nếu development → dùng fake auth
+  // Nếu production → dùng real auth
+  const adminMiddlewares = isDevelopment 
+    ? [fakeAdminAuth] 
+    : [requireAdminAuth];
+    
+  const shopOrAdminMiddlewares = isDevelopment
+    ? [fakeShopOrAdminAuth]
+    : [requireShopOrAdminAuth];
+
+  console.log(` Auth Mode: ${isDevelopment ? 'DEVELOPMENT (Fake Auth)' : 'PRODUCTION (Real Auth)'}`);
 
   app.use(PATH_ADMIN + `/dashboard`, [], dashboardRoute);
 

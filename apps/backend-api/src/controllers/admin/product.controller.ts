@@ -16,6 +16,7 @@ import { AuctionModel } from "../../models/auction.model";
 import {
   PRODUCT_STATUS_LABEL,
   ProductStatusCode,
+  PRODUCT_PRICE_TYPE,
 } from "../../constants/product.constants";
 import { BrandModel } from "../../models/brand.model";
 import { findCategoriesSorted } from "../../services/category.service";
@@ -23,11 +24,11 @@ import { findCategoriesSorted } from "../../services/category.service";
 export async function getProducts(req: Request, res: Response) {
   try {
     const user = (req as any).user;
-    // determine role from token payload (support userRole or role)
     const rawRole =
       user && typeof user.userRole !== "undefined"
         ? user.userRole
         : user && user.role;
+    
     function resolveRoleCode(role: any): number {
       if (typeof role === "number") return Number(role);
       if (typeof role === "string") {
@@ -42,17 +43,171 @@ export async function getProducts(req: Request, res: Response) {
     }
     const roleCode = resolveRoleCode(rawRole);
 
+    // ADMIN FLOW - with advanced filters
     if (roleCode === USER_ROLE.ADMIN) {
-      const data = await listProductsDB(req.query);
-      return sendSuccess(res, data);
+      const { page, pageSize, skip, limit } = parsePaging(req.query);
+      const q: any = req.query || {};
+      
+      // Build filter object
+      const filter: any = {};
+
+      // 1. Filter by priceType (fixed=1, negotiation=2, auction=3)
+      if (q.priceType) {
+        const pt = Number(q.priceType);
+        if (!Number.isNaN(pt)) {
+          filter.productPriceType = pt;
+        }
+      }
+
+      // 2. Search by name
+      if (q.search) {
+        filter.productName = { $regex: String(q.search), $options: "i" };
+      }
+
+      // 3. Filter by status (1=active, 2=inactive, etc.)
+      if (q.status) {
+        const st = Number(q.status);
+        if (!Number.isNaN(st)) {
+          filter.productStatus = st;
+        }
+      }
+
+      // 4. Filter by deleted (0=no, 1=yes)
+      if (typeof q.deleted !== "undefined") {
+        const d = String(q.deleted).toLowerCase();
+        if (d === "true" || d === "1") filter.productDeleted = 1;
+        else if (d === "false" || d === "0") filter.productDeleted = 0;
+      } else {
+        // Default: only show non-deleted
+        filter.productDeleted = 0;
+      }
+
+      // 5. Filter by date (created date)
+      if (q.dateFilter) {
+        const dateStart = new Date(q.dateFilter);
+        const dateEnd = new Date(q.dateFilter);
+        dateEnd.setHours(23, 59, 59, 999);
+        filter.createdAt = { $gte: dateStart, $lte: dateEnd };
+      }
+
+      // 6. Filter by shop name (search in User collection)
+      let shopIds: string[] | undefined;
+      if (q.shop) {
+        const shops = await UserModel.find({
+          $or: [
+            { userName: { $regex: String(q.shop), $options: "i" } },
+            { "sellerRegistration.shopName": { $regex: String(q.shop), $options: "i" } },
+          ],
+        }).select("_id").lean();
+        shopIds = shops.map((s: any) => String(s._id));
+        if (shopIds.length > 0) {
+          filter.productShopId = { $in: shopIds };
+        } else {
+          // No matching shop found -> return empty
+          return sendSuccess(res, { items: [], page, pageSize, total: 0 });
+        }
+      }
+
+      // 7. Filter by category
+      if (q.category) {
+        filter.productCategory = q.category;
+      }
+
+      // 8. Filter by price range
+      if (q.priceMin || q.priceMax) {
+        filter.productPrice = {};
+        if (q.priceMin) filter.productPrice.$gte = Number(q.priceMin);
+        if (q.priceMax) filter.productPrice.$lte = Number(q.priceMax);
+      }
+
+      // 9. Filter by quantity
+      if (q.quantity) {
+        filter.productQuantity = Number(q.quantity);
+      }
+
+      // Execute query
+      const [items, total] = await Promise.all([
+        ProductModel.find(filter)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        ProductModel.countDocuments(filter),
+      ]);
+
+      // Enrich with shop info and auction data
+      const shopIdsToFetch = [...new Set(items.map((p: any) => String(p.productShopId)))];
+      const shopsMap: Record<string, any> = {};
+      if (shopIdsToFetch.length > 0) {
+        const shops = await UserModel.find({ _id: { $in: shopIdsToFetch } })
+          .select("_id userName userAvatar sellerRegistration.shopName")
+          .lean();
+        shops.forEach((s: any) => {
+          shopsMap[String(s._id)] = s;
+        });
+      }
+
+      const auctionIds = items
+        .map((p: any) => p.productAuction?.auctionId)
+        .filter(Boolean);
+      const auctionsMap: Record<string, any> = {};
+      if (auctionIds.length > 0) {
+        const auctions = await AuctionModel.find({ _id: { $in: auctionIds } }).lean();
+        auctions.forEach((a: any) => {
+          auctionsMap[String(a._id)] = a;
+        });
+      }
+
+      // Map to DTO
+      const mapped = items.map((p: any) => {
+        const shop = shopsMap[String(p.productShopId)];
+        const isAuction = p.productPriceType === PRODUCT_PRICE_TYPE.AUCTION;
+        
+        let price = p.productPrice || 0;
+        let auctionEndsAt: string | undefined;
+        
+        if (isAuction && p.productAuction?.auctionId) {
+          const auction = auctionsMap[String(p.productAuction.auctionId)];
+          if (auction) {
+            if (typeof auction.currentPrice === "number") price = auction.currentPrice;
+            if (auction.endsAt) auctionEndsAt = new Date(auction.endsAt).toISOString();
+          }
+        }
+
+        return {
+          id: String(p._id),
+          name: p.productName || "",
+          shop: shop?.sellerRegistration?.shopName || shop?.userName || "N/A",
+          shopId: String(p.productShopId),
+          category: p.productCategory ? String(p.productCategory) : "N/A",
+          quantity: p.productQuantity || 0,
+          price,
+          status: p.productStatus,
+          deleted: p.productDeleted,
+          created: p.createdAt ? new Date(p.createdAt).toISOString() : undefined,
+          priceType: p.productPriceType,
+          priceTypeLabel:
+            p.productPriceType === 1
+              ? "Giá cố định"
+              : p.productPriceType === 2
+              ? "Thương lượng"
+              : p.productPriceType === 3
+              ? "Đấu giá"
+              : String(p.productPriceType),
+          thumbnail: Array.isArray(p.productMedia) ? p.productMedia[0] : p.productMedia,
+          auctionEndsAt,
+        };
+      });
+
+      return sendSuccess(res, { items: mapped, page, pageSize, total });
     }
 
-    // if shop, only list their products
+    // SHOP FLOW - giữ nguyên code cũ
     if (roleCode === USER_ROLE.SHOP) {
       const shopId = user && user.sub ? String(user.sub) : null;
       const { page, pageSize, skip, limit } = parsePaging(req.query);
       const filter: any = { productShopId: shopId };
-      // allow shop to filter by priceType and deleted via query params
+      
       try {
         const q: any = req.query || {};
         if (typeof q.priceType !== "undefined" && q.priceType !== null) {
@@ -80,6 +235,7 @@ export async function getProducts(req: Request, res: Response) {
       } catch (e) {
         // ignore parse errors
       }
+      
       const [items, total] = await Promise.all([
         ProductModel.find(filter)
           .sort({ createdAt: -1 })
@@ -88,7 +244,8 @@ export async function getProducts(req: Request, res: Response) {
           .lean(),
         ProductModel.countDocuments(filter),
       ]);
-      // Enrich auction products: fetch auctions for items that reference auctions
+      
+      // ... rest of shop code (giữ nguyên)
       const auctionIds = (items || [])
         .map((p: any) => p.productAuction && p.productAuction.auctionId)
         .filter(Boolean);
@@ -100,7 +257,6 @@ export async function getProducts(req: Request, res: Response) {
         for (const a of auctions) auctionsMap[String(a._id)] = a;
       }
 
-      // map to compact DTO
       const mapped = (items || []).map((p: any) => {
         const isAuction =
           typeof p.productPriceType === "number" && p.productPriceType === 3;
