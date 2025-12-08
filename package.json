@@ -17,6 +17,11 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "date-fns": "^4.1.0",
+    "lucide-react": "^0.554.0",
     "react-router-dom": "^7.9.3"
+  },
+  "devDependencies": {
+    "baseline-browser-mapping": "^2.9.4"
   }
 }

@@ -5,6 +5,8 @@ import {
   getProductDetail,
   respondNegotiationHandler,
   getProductMeta,
+  updateProduct,
+  setProductDeleted,
 } from "../../controllers/admin/product.controller";
 
 const router = Router();
@@ -13,6 +15,8 @@ const router = Router();
 router.get("/", getProducts);
 router.get("/meta", getProductMeta);
 router.post("/", postProduct);
+router.put("/:id", updateProduct);
+router.post("/:id/hide", setProductDeleted);
 router.get("/:id", getProductDetail);
 
 // Admin respond to a negotiation (seller/admin action)

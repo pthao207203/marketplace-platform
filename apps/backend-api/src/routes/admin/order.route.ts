@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  listOrders,
   confirmOrderHandler,
   getOrderDetail,
   listReturnRequests,
@@ -8,9 +9,7 @@ import {
 } from "../../controllers/admin/order.controller";
 
 const router = Router();
-
-router.get("/:shopId/orders", listShopOrdersByStatusHandler);
-
+//router.get("/:shopId/orders", listShopOrdersByStatusHandler);
 // Admin/shop order detail
 router.get("/:id", getOrderDetail);
 

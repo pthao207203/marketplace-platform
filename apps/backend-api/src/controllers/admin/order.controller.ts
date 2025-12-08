@@ -8,7 +8,125 @@ import axios from "axios";
 import { upsertFromProvider } from "../../utils/shipment-service";
 import { ORDER_STATUS } from "../../constants/order.constants";
 import { USER_ROLE, USER_ROLE_CODE } from "../../constants/user.constants";
+import { parsePaging } from "../../utils/pagination";
 
+// ⚠️ THÊM MỚI: GET /api/admin/orders - LIST ORDERS
+export async function listOrders(req: Request, res: Response) {
+  try {
+    const user = (req as any).user;
+    const { page, pageSize, skip, limit } = parsePaging(req.query);
+    const q: any = req.query || {};
+
+    // Build filter
+    const filter: any = {};
+
+    // 1. Search by orderId or userId
+    if (q.search) {
+      filter.$or = [
+        { orderId: { $regex: String(q.search), $options: "i" } },
+        { orderBuyerId: { $regex: String(q.search), $options: "i" } },
+      ];
+    }
+
+    // 2. Filter by status
+    if (q.status && q.status !== "All") {
+      // Map frontend status to backend ORDER_STATUS
+      const statusMap: Record<string, number> = {
+        Pending: ORDER_STATUS.PENDING,
+        Cancelled: ORDER_STATUS.CANCELLED,
+        Delivering: ORDER_STATUS.SHIPPING,
+        Delivered: ORDER_STATUS.DELIVERED,
+        Returned: ORDER_STATUS.RETURNED,
+      };
+
+      const backendStatus = statusMap[q.status];
+      if (backendStatus !== undefined) {
+        filter.orderStatus = backendStatus;
+      }
+    }
+
+    // 3. Filter by date range
+    if (q.dateFrom || q.dateTo) {
+      filter.createdAt = {};
+      if (q.dateFrom) {
+        const dateStart = new Date(q.dateFrom);
+        dateStart.setHours(0, 0, 0, 0);
+        filter.createdAt.$gte = dateStart;
+      }
+      if (q.dateTo) {
+        const dateEnd = new Date(q.dateTo);
+        dateEnd.setHours(23, 59, 59, 999);
+        filter.createdAt.$lte = dateEnd;
+      }
+    }
+
+    // 4. Filter by price range
+    if (q.minAmount || q.maxAmount) {
+      filter.orderTotalAmount = {};
+      if (q.minAmount) filter.orderTotalAmount.$gte = Number(q.minAmount);
+      if (q.maxAmount) filter.orderTotalAmount.$lte = Number(q.maxAmount);
+    }
+
+    // Role-based filter
+    const rawRole =
+      typeof user.userRole !== "undefined" ? user.userRole : user.role;
+    const roleCode = resolveRoleCode(rawRole);
+
+    if (roleCode === USER_ROLE.SHOP) {
+      // Shop chỉ xem orders của mình
+      const shopId = String(user.sub);
+      filter.orderSellerIds = shopId;
+    }
+    // Admin xem tất cả
+
+    // Execute query
+    const [items, total] = await Promise.all([
+      OrderModel.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      OrderModel.countDocuments(filter),
+    ]);
+
+    // Map to frontend format
+    const mapped = items.map((order: any) => {
+      // Map backend status to frontend status
+      const statusMap: Record<number, string> = {
+        [ORDER_STATUS.PENDING]: "Pending",
+        [ORDER_STATUS.SHIPPING]: "Delivering",
+        [ORDER_STATUS.DELIVERED]: "Delivered",
+        [ORDER_STATUS.CANCELLED]: "Cancelled",
+        [ORDER_STATUS.RETURNED]: "Returned",
+      };
+
+      return {
+        id: String(order._id),
+        orderId: order.orderId || `ORD-${String(order._id).slice(-8)}`,
+        userId: String(order.orderBuyerId || ""),
+        creationDate: order.createdAt
+          ? new Date(order.createdAt).toISOString()
+          : "",
+        completionDate: order.deliveredAt
+          ? new Date(order.deliveredAt).toISOString()
+          : undefined,
+        status: statusMap[order.orderStatus] || "Pending",
+        totalPrice: order.orderTotalAmount || 0,
+        totalItems: order.orderItems?.length || 0,
+        paymentStatus: order.orderPaymentStatus === "paid" ? "Paid" : "Unpaid",
+        canConfirm:
+          order.orderStatus === ORDER_STATUS.PENDING && !order.orderLocked,
+      };
+    });
+
+    return sendSuccess(res, { items: mapped, page, pageSize, total });
+  } catch (err: any) {
+    console.error("listOrders error", err);
+    return sendError(res, 500, "Server error", err?.message);
+  }
+}
+
+// POST /api/admin/orders/:id/confirm
 export async function confirmOrderHandler(req: Request, res: Response) {
   try {
     const user = (req as any).user;
@@ -21,8 +139,8 @@ export async function confirmOrderHandler(req: Request, res: Response) {
     const order: any = await OrderModel.findById(orderId).lean();
     if (!order) return sendError(res, 404, "Order not found");
 
+    // Check quyền Shop
     const sellerId = String(user.sub);
-
     const isSeller = (order.orderSellerIds || []).some((id: any) => {
       const idHex =
         id && typeof id.toHexString === "function"
@@ -30,9 +148,17 @@ export async function confirmOrderHandler(req: Request, res: Response) {
           : String(id);
       return idHex === sellerId || String(id) === sellerId;
     });
-    if (!isSeller /* && role !== ADMIN */)
-      return sendError(res, 403, "Forbidden");
 
+    // Cho phép Admin xác nhận giùm shop
+    const rawRole =
+      typeof user.userRole !== "undefined" ? user.userRole : user.role;
+    const roleCode = resolveRoleCode(rawRole);
+
+    if (!isSeller && roleCode !== USER_ROLE.ADMIN) {
+      return sendError(res, 403, "Forbidden");
+    }
+
+    // Cập nhật trạng thái đơn hàng sang SHIPPING
     await OrderModel.updateOne(
       { _id: orderId },
       {
@@ -43,6 +169,7 @@ export async function confirmOrderHandler(req: Request, res: Response) {
       }
     );
 
+    // Create shipment record
     const courierName =
       process.env.TRACKING_PROVIDER === "trackingmore"
         ? "TRACKINGMORE"
@@ -57,6 +184,7 @@ export async function confirmOrderHandler(req: Request, res: Response) {
       orderId: orderId,
     });
 
+    // External Tracking Logic
     try {
       const trackingServiceUrl = process.env.TRACKING_SERVICE_URL;
       if (trackingServiceUrl) {
@@ -106,6 +234,45 @@ export async function confirmOrderHandler(req: Request, res: Response) {
     return sendSuccess(res, { shipment, orderId }, 201);
   } catch (err: any) {
     console.error("confirmOrder error", err);
+    return sendError(res, 500, "Server error", err?.message);
+  }
+}
+
+// ⚠️ THÊM MỚI: POST /api/admin/orders/:id/cancel
+export async function cancelOrderHandler(req: Request, res: Response) {
+  try {
+    const user = (req as any).user;
+    if (!user || !user.sub) return sendError(res, 401, "Unauthorized");
+
+    const orderId = req.params.id;
+    if (!orderId || !Types.ObjectId.isValid(orderId))
+      return sendError(res, 400, "Invalid order id");
+
+    const order: any = await OrderModel.findById(orderId).lean();
+    if (!order) return sendError(res, 404, "Order not found");
+
+    // Chỉ cho phép cancel order Pending
+    if (order.orderStatus !== ORDER_STATUS.PENDING) {
+      return sendError(res, 400, "Can only cancel pending orders");
+    }
+
+    const reason = String(req.body?.reason || "Admin cancelled");
+
+    await OrderModel.updateOne(
+      { _id: orderId },
+      {
+        $set: {
+          orderStatus: ORDER_STATUS.CANCELLED,
+          orderCancelReason: reason,
+          orderCancelledAt: new Date(),
+          orderCancelledBy: user.sub,
+        },
+      }
+    );
+
+    return sendSuccess(res, { ok: true, message: "Order cancelled" });
+  } catch (err: any) {
+    console.error("cancelOrder error", err);
     return sendError(res, 500, "Server error", err?.message);
   }
 }
@@ -195,10 +362,12 @@ export async function getOrderDetail(req: Request, res: Response) {
     const user = (req as any).user;
     const userId = String(user.sub);
 
+    // Cho phép Người mua (Buyer) xem đơn của chính mình
     if (String(order.orderBuyerId) === userId) {
       return sendSuccess(res, { order });
-    } // Logic check role
+    }
 
+    // Logic check role
     const rawRole =
       typeof user.userRole !== "undefined" ? user.userRole : user.role;
     const roleCode = resolveRoleCode(rawRole);
@@ -226,7 +395,6 @@ export async function getOrderDetail(req: Request, res: Response) {
     return sendError(res, 500, "Server error", err?.message);
   }
 }
-
 // GET /api/shops/:shopId/orders
 export async function listShopOrdersByStatusHandler(
   req: Request,
@@ -272,21 +440,22 @@ export async function listShopOrdersByStatusHandler(
     return sendError(res, 500, "Server error", err?.message);
   }
 }
-
 function resolveRoleCode(role: any): number {
   if (typeof role === "number") return Number(role);
   if (typeof role === "string") {
     const n = Number(role);
     if (!Number.isNaN(n)) return n;
-    const key = String(role).toLowerCase(); // @ts-ignore
+    const key = String(role).toLowerCase();
+    // @ts-ignore
     const mapped = USER_ROLE_CODE[key];
     return typeof mapped === "number" ? mapped : NaN;
   }
   return NaN;
 }
-
 export default {
+  listOrders,
   confirmOrderHandler,
+  cancelOrderHandler,
   listReturnRequests,
   reviewReturnRequest,
   getOrderDetail,

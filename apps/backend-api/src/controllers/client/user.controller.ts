@@ -1,12 +1,13 @@
 import type { Request, Response } from "express";
-import { UserModel } from "../../models/user.model";
+// 👇 Import cả 2 cách để đảm bảo tương thích
+import UserModel from "../../models/user.model";
+import OrderModel from "../../models/order.model";
+import { ProductModel } from "../../models/product.model";
+import { getSystemSettings } from "../../models/systemSettings.model";
 import { sendSuccess, sendError } from "../../utils/response";
 import { Types } from "mongoose";
 import { toStatusLabel } from "../../utils/user-mapper";
-import OrderModel from "../../models/order.model";
-import { ProductModel } from "../../models/product.model";
 import { hashPassword, verifyPassword } from "../../utils/password";
-import { getSystemSettings } from "../../models/systemSettings.model";
 
 function escapeRegExp(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -15,7 +16,7 @@ function escapeRegExp(s: string) {
 // GET /api/me/profile
 export async function getMyProfile(req: Request, res: Response) {
   try {
-    const userId = req.user?.sub;
+    const userId = (req as any).user?.sub;
     if (!userId || !Types.ObjectId.isValid(String(userId)))
       return sendError(res, 401, "Unauthorized");
 
@@ -45,13 +46,14 @@ export async function getMyProfile(req: Request, res: Response) {
     } | null = null;
     if (Array.isArray(user.userAddress) && user.userAddress.length > 0) {
       // 1) default address
+      // 👇 Sửa lỗi TS7006: thêm kiểu :any cho tham số a
       homeAddress =
-        user.userAddress.find((a) => Boolean((a as any).isDefault)) || null;
+        user.userAddress.find((a: any) => Boolean(a.isDefault)) || null;
       // 2) label 'Nhà'
       if (!homeAddress) {
         homeAddress =
           user.userAddress.find(
-            (a) => (a.label || "").toLowerCase() === "nhà"
+            (a: any) => (a.label || "").toLowerCase() === "nhà"
           ) || null;
       }
       // 3) first address
@@ -80,10 +82,10 @@ export async function getMyProfile(req: Request, res: Response) {
   }
 }
 
-// GET /api/me/profile/edit -> profile payload for edit form: name, mail, phone, banks, default address
+// GET /api/me/profile/edit -> profile payload for edit form
 export async function getProfileForEdit(req: Request, res: Response) {
   try {
-    const userId = req.user?.sub;
+    const userId = (req as any).user?.sub;
     if (!userId || !Types.ObjectId.isValid(String(userId)))
       return sendError(res, 401, "Unauthorized");
 
@@ -124,10 +126,10 @@ export async function getProfileForEdit(req: Request, res: Response) {
   }
 }
 
-// PATCH /api/me/password/ -> change password (and optionally username)
+// PATCH /api/me/password/ -> change password
 export async function patchPassword(req: Request, res: Response) {
   try {
-    const userId = req.user?.sub;
+    const userId = (req as any).user?.sub;
     if (!userId || !Types.ObjectId.isValid(String(userId)))
       return sendError(res, 401, "Unauthorized");
 
@@ -172,10 +174,10 @@ export async function patchPassword(req: Request, res: Response) {
   }
 }
 
-// PATCH /api/me -> update profile fields: name, phone, mail
+// PATCH /api/me -> update profile fields
 export async function patchProfile(req: Request, res: Response) {
   try {
-    const userId = req.user?.sub;
+    const userId = (req as any).user?.sub;
     if (!userId || !Types.ObjectId.isValid(String(userId)))
       return sendError(res, 401, "Unauthorized");
 
@@ -244,7 +246,7 @@ export async function patchProfile(req: Request, res: Response) {
 // GET /api/me/addresses
 export async function listAddresses(req: Request, res: Response) {
   try {
-    const userId = req.user?.sub;
+    const userId = (req as any).user?.sub;
     if (!userId || !Types.ObjectId.isValid(String(userId)))
       return sendError(res, 401, "Unauthorized");
 
@@ -261,7 +263,7 @@ export async function listAddresses(req: Request, res: Response) {
 // GET /api/me/addresses/:id
 export async function getAddress(req: Request, res: Response) {
   try {
-    const userId = req.user?.sub;
+    const userId = (req as any).user?.sub;
     const { id } = req.params;
     if (
       !userId ||
@@ -273,9 +275,9 @@ export async function getAddress(req: Request, res: Response) {
     const u = await UserModel.findById(String(userId))
       .select("userAddress")
       .lean<{ userAddress?: any[] } | null>();
+    // 👇 Sửa lỗi TS7006: thêm kiểu :any cho tham số a
     const addr =
-      u?.userAddress?.find((a) => String((a as any)._id) === String(id)) ||
-      null;
+      u?.userAddress?.find((a: any) => String(a._id) === String(id)) || null;
     if (!addr) return sendError(res, 404, "Address not found");
     return sendSuccess(res, addr);
   } catch (err: any) {
@@ -287,7 +289,7 @@ export async function getAddress(req: Request, res: Response) {
 // POST /api/me/addresses -> create
 export async function createAddress(req: Request, res: Response) {
   try {
-    const userId = req.user?.sub;
+    const userId = (req as any).user?.sub;
     const body = req.body || {};
     if (!userId || !Types.ObjectId.isValid(String(userId)))
       return sendError(res, 401, "Unauthorized");
@@ -317,7 +319,7 @@ export async function createAddress(req: Request, res: Response) {
 // PUT /api/me/addresses/:id -> update
 export async function updateAddress(req: Request, res: Response) {
   try {
-    const userId = req.user?.sub;
+    const userId = (req as any).user?.sub;
     const { id } = req.params;
     const body = req.body || {};
     if (
@@ -326,7 +328,7 @@ export async function updateAddress(req: Request, res: Response) {
       !Types.ObjectId.isValid(String(id))
     )
       return sendError(res, 401, "Unauthorized");
-    // PUT semantics: replace entire subdocument with provided payload (only allowed fields)
+    // PUT semantics: replace entire subdocument with provided payload
     const allowed = [
       "name",
       "phone",
@@ -365,6 +367,7 @@ export async function updateAddress(req: Request, res: Response) {
       { arrayFilters: [{ "elem._id": new Types.ObjectId(id) }], new: true }
     ).select("userAddress");
 
+    // 👇 Sửa lỗi TS7006
     const addr =
       updated?.userAddress?.find((a: any) => String(a._id) === String(id)) ||
       null;
@@ -379,7 +382,7 @@ export async function updateAddress(req: Request, res: Response) {
 // DELETE /api/me/addresses/:id -> remove an address
 export async function deleteAddress(req: Request, res: Response) {
   try {
-    const userId = req.user?.sub;
+    const userId = (req as any).user?.sub;
     const { id } = req.params;
     if (
       !userId ||
@@ -405,7 +408,7 @@ export async function deleteAddress(req: Request, res: Response) {
 // GET /api/me/banks -> list user's bank accounts
 export async function listBanks(req: Request, res: Response) {
   try {
-    const userId = req.user?.sub;
+    const userId = (req as any).user?.sub;
     if (!userId || !Types.ObjectId.isValid(String(userId)))
       return sendError(res, 401, "Unauthorized");
     const u = await UserModel.findById(String(userId))
@@ -418,10 +421,10 @@ export async function listBanks(req: Request, res: Response) {
   }
 }
 
-// GET /api/me/banks/:id -> get single bank by _id or by bankName (case-insensitive)
+// GET /api/me/banks/:id -> get single bank
 export async function getBank(req: Request, res: Response) {
   try {
-    const userId = req.user?.sub;
+    const userId = (req as any).user?.sub;
     const { id } = req.params;
     if (!userId || !Types.ObjectId.isValid(String(userId)))
       return sendError(res, 401, "Unauthorized");
@@ -436,17 +439,19 @@ export async function getBank(req: Request, res: Response) {
     // attempt to match by ObjectId first
     let found: any = null;
     if (Types.ObjectId.isValid(String(id))) {
+      // 👇 Sửa lỗi TS7006: thêm kiểu :any cho tham số b
       found = banks.find(
-        (b) =>
-          String((b as any)._id || b.bankId || "").toLowerCase() ===
+        (b: any) =>
+          String(b._id || b.bankId || "").toLowerCase() ===
           String(id).toLowerCase()
       );
     }
 
     // fallback: match by bankName (case-insensitive)
     if (!found) {
+      // 👇 Sửa lỗi TS7006: thêm kiểu :any cho tham số b
       found = banks.find(
-        (b) =>
+        (b: any) =>
           String(b.bankName || b.bankNameSnapshot || "").toLowerCase() ===
           String(id).toLowerCase()
       );
@@ -463,7 +468,7 @@ export async function getBank(req: Request, res: Response) {
 // POST /api/me/banks -> create bank account
 export async function createBank(req: Request, res: Response) {
   try {
-    const userId = req.user?.sub;
+    const userId = (req as any).user?.sub;
     const body = req.body || {};
     if (!userId || !Types.ObjectId.isValid(String(userId)))
       return sendError(res, 401, "Unauthorized");
@@ -476,13 +481,13 @@ export async function createBank(req: Request, res: Response) {
     let partner: any = null;
     if (body.bankCode)
       partner = partnerBanks.find(
-        (p) =>
+        (p: any) =>
           String(p.code || "").toLowerCase() ===
           String(body.bankCode).toLowerCase()
       );
     if (!partner && body.bankName)
       partner = partnerBanks.find(
-        (p) =>
+        (p: any) =>
           String(p.name || "").toLowerCase() ===
           String(body.bankName).toLowerCase()
       );
@@ -500,7 +505,8 @@ export async function createBank(req: Request, res: Response) {
     const u = await UserModel.findById(String(userId))
       .select("userBanks")
       .lean<{ userBanks?: any[] } | null>();
-    const exists = (u?.userBanks ?? []).some((b) => {
+    // 👇 Sửa lỗi TS7006
+    const exists = (u?.userBanks ?? []).some((b: any) => {
       // match by bankName (current schema) or snapshot fields
       if (
         b.bankName &&
@@ -555,10 +561,10 @@ export async function createBank(req: Request, res: Response) {
   }
 }
 
-// PUT /api/me/banks/:name -> replace bank account matching bankName (case-insensitive)
+// PUT /api/me/banks/:name -> replace bank account matching bankName
 export async function updateBankByName(req: Request, res: Response) {
   try {
-    const userId = req.user?.sub;
+    const userId = (req as any).user?.sub;
     const { name } = req.params;
     const body = req.body || {};
     if (!userId || !Types.ObjectId.isValid(String(userId)))
@@ -570,8 +576,9 @@ export async function updateBankByName(req: Request, res: Response) {
       .select("userBanks")
       .lean<{ userBanks?: any[] } | null>();
     const banks = u?.userBanks ?? [];
+    // 👇 Sửa lỗi TS7006
     const found = banks.find(
-      (b) =>
+      (b: any) =>
         String(b.bankName || "").toLowerCase() === String(name).toLowerCase()
     );
     if (!found) return sendError(res, 404, "Bank account not found");
@@ -598,8 +605,9 @@ export async function updateBankByName(req: Request, res: Response) {
     }
 
     // find index of the matched subdocument
+    // 👇 Sửa lỗi TS7006
     const idx = banks.findIndex(
-      (b) =>
+      (b: any) =>
         String(b.bankName || "").toLowerCase() === String(name).toLowerCase()
     );
     if (idx === -1) return sendError(res, 404, "Bank account not found");
@@ -624,7 +632,7 @@ export async function updateBankByName(req: Request, res: Response) {
 // GET /api/me/wallet/topups -> list bank->wallet topup history
 export async function getTopupHistory(req: Request, res: Response) {
   try {
-    const userId = req.user?.sub;
+    const userId = (req as any).user?.sub;
     if (!userId || !Types.ObjectId.isValid(String(userId)))
       return sendError(res, 401, "Unauthorized");
 
@@ -661,7 +669,7 @@ export async function getTopupHistory(req: Request, res: Response) {
 // GET /api/me/orders/purchases -> purchase history for buyer
 export async function getPurchaseHistory(req: Request, res: Response) {
   try {
-    const userId = req.user?.sub;
+    const userId = (req as any).user?.sub;
     if (!userId || !Types.ObjectId.isValid(String(userId)))
       return sendError(res, 401, "Unauthorized");
 
@@ -702,7 +710,6 @@ export async function getPurchaseHistory(req: Request, res: Response) {
               name: first.name ?? undefined,
               qty: first.qty ?? 1,
               price: first.price ?? undefined,
-              // image will be filled below if missing from embedded item
               image:
                 (first.productMedia &&
                   (Array.isArray(first.productMedia)
@@ -761,10 +768,10 @@ export async function getPurchaseHistory(req: Request, res: Response) {
   }
 }
 
-// GET /api/me/wallet/received -> money received: refunds credited + order payments for shop
+// GET /api/me/wallet/received -> money received
 export async function getReceivedHistory(req: Request, res: Response) {
   try {
-    const userId = req.user?.sub;
+    const userId = (req as any).user?.sub;
     if (!userId || !Types.ObjectId.isValid(String(userId)))
       return sendError(res, 401, "Unauthorized");
 
@@ -793,7 +800,6 @@ export async function getReceivedHistory(req: Request, res: Response) {
               .includes("refund"))
       )
       .map((t: any) => {
-        // detect common places where an order id might be stored on a refund/topup record
         const possibleOrderId =
           t.orderId ||
           t.relatedOrderId ||
@@ -807,14 +813,12 @@ export async function getReceivedHistory(req: Request, res: Response) {
           amount: t.amount,
           currency: t.currency ?? "VND",
           time: t.createdAt ?? t.at ?? null,
-          // will attach firstProduct.image below when possible
           firstProduct: null as any,
         } as any;
       });
 
-    // orders where this user is seller and payment is completed
+    // orders where this user is seller
     const sellerFilter: any = { orderSellerIds: String(userId) };
-    // approximate paid status: orderPaymentStatus or orderPaymentMethod
     const [sellerOrders, totalOrders] = await Promise.all([
       OrderModel.find(sellerFilter)
         .sort({ createdAt: -1 })
@@ -857,20 +861,17 @@ export async function getReceivedHistory(req: Request, res: Response) {
       };
     });
 
-    // For refunds that reference an orderId, fetch that order's first product id to resolve image
     const refundOrderIds = refundTopups
       .map((r: any) => (r.orderId ? String(r.orderId) : null))
       .filter((x: any) => x);
 
     const productIdsToFetch = new Set<string>();
 
-    // collect product ids from seller order entries
     for (const e of orderEntries) {
       if (e.firstProduct && e.firstProduct.id)
         productIdsToFetch.add(e.firstProduct.id);
     }
 
-    // map orderId -> first product id for refunds
     const orderFirstProductMap: Record<string, { id?: string; name?: string }> =
       {};
     if (refundOrderIds.length) {
@@ -893,7 +894,6 @@ export async function getReceivedHistory(req: Request, res: Response) {
       }
     }
 
-    // fetch products for all collected ids
     const prodIdsArr = Array.from(productIdsToFetch);
     const prodMap: Record<string, any> = {};
     if (prodIdsArr.length) {
@@ -905,7 +905,6 @@ export async function getReceivedHistory(req: Request, res: Response) {
       for (const p of prods) prodMap[String(p._id)] = p;
     }
 
-    // attach images to orderEntries
     for (const e of orderEntries) {
       if (e.firstProduct && e.firstProduct.id && !e.firstProduct.image) {
         const p = prodMap[e.firstProduct.id];
@@ -923,7 +922,6 @@ export async function getReceivedHistory(req: Request, res: Response) {
       }
     }
 
-    // attach images to refundTopups based on their referenced order
     for (const r of refundTopups) {
       if (r.orderId && orderFirstProductMap[r.orderId]) {
         const info = orderFirstProductMap[r.orderId];
@@ -963,10 +961,10 @@ export async function getReceivedHistory(req: Request, res: Response) {
   }
 }
 
-// DELETE /api/me/banks/:name -> delete a bank account by partner bank name (case-insensitive)
+// DELETE /api/me/banks/:name -> delete a bank account by partner bank name
 export async function deleteBankByName(req: Request, res: Response) {
   try {
-    const userId = req.user?.sub;
+    const userId = (req as any).user?.sub;
     const { name } = req.params;
     if (!userId || !Types.ObjectId.isValid(String(userId)))
       return sendError(res, 401, "Unauthorized");
@@ -974,12 +972,13 @@ export async function deleteBankByName(req: Request, res: Response) {
 
     const system = (await getSystemSettings()) as any;
     const partnerBanks: any[] = system?.partnerBanks ?? [];
+    // 👇 Sửa lỗi TS7006
     const match = partnerBanks.find(
-      (p) => String(p.name || "").toLowerCase() === String(name).toLowerCase()
+      (p: any) =>
+        String(p.name || "").toLowerCase() === String(name).toLowerCase()
     );
     if (!match) return sendError(res, 404, "Bank provider not found");
 
-    // remove any userBanks that reference this partner by name (case-insensitive)
     const regex = new RegExp(
       "^" + escapeRegExp(String(name).trim()) + "$",
       "i"
@@ -1009,7 +1008,6 @@ export async function submitSellerApplication(req: Request, res: Response) {
       return sendError(res, 400, "Missing required fields");
     }
 
-    // pickupAddress must be an object
     if (
       typeof pickupAddress !== "object" ||
       Array.isArray(pickupAddress) ||
@@ -1018,7 +1016,6 @@ export async function submitSellerApplication(req: Request, res: Response) {
       return sendError(res, 400, "pickupAddress must be an object");
     }
 
-    // Use atomic update to avoid validating unrelated subdocuments (e.g., userWallet.topups)
     const update = {
       sellerRegistration: {
         status: "pending",
@@ -1029,7 +1026,6 @@ export async function submitSellerApplication(req: Request, res: Response) {
         pickupAddress: pickupAddress,
         submittedAt: new Date(),
       },
-      // do not modify userRole here; remain CUSTOMER until admin approves
     } as any;
 
     const resUpdate = await UserModel.findByIdAndUpdate(
@@ -1043,6 +1039,77 @@ export async function submitSellerApplication(req: Request, res: Response) {
     return sendSuccess(res, { ok: true });
   } catch (err: any) {
     console.error("submitSellerApplication error", err);
+    return sendError(res, 500, "Server error", err?.message);
+  }
+}
+
+// GET /api/products/seller/:id/reviews -> public seller reviews (paginated)
+export async function getSellerReviews(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+    if (!id || !Types.ObjectId.isValid(String(id)))
+      return sendError(res, 400, "Missing or invalid seller id");
+
+    const page = Math.max(1, Number(req.query.page ?? 1));
+    const pageSize = Math.min(
+      100,
+      Math.max(1, Number(req.query.pageSize ?? 20))
+    );
+    const skip = (page - 1) * pageSize;
+
+    const seller = await UserModel.findById(String(id))
+      .select("userComment userName userAvatar userRate")
+      .lean<any>();
+    if (!seller) return sendError(res, 404, "Seller not found");
+
+    const comments = Array.isArray(seller.userComment)
+      ? seller.userComment
+      : [];
+    const total = comments.length;
+
+    // paginate in-memory (comments are stored as subdocuments)
+    const pageItems = comments.slice(skip, skip + pageSize);
+
+    // collect commenter ids to resolve their names/avatars
+    const commenterIds = Array.from(
+      new Set(
+        pageItems
+          .map((c: any) => (c && c.by ? String(c.by) : null))
+          .filter(Boolean)
+      )
+    );
+    let commenterMap: Record<string, any> = {};
+    if (commenterIds.length) {
+      const users = await UserModel.find({ _id: { $in: commenterIds } })
+        .select("userName userAvatar")
+        .lean<any>();
+      for (const u of users) commenterMap[String(u._id)] = u;
+    }
+
+    const items = pageItems.map((c: any) => ({
+      rate: typeof c.rate === "number" ? c.rate : undefined,
+      description: c.description ?? undefined,
+      media: Array.isArray(c.media) ? c.media : c.media ? [c.media] : [],
+      createdAt: c.createdAt ? new Date(c.createdAt).toISOString() : undefined,
+      by: c.by ? String(c.by) : undefined,
+      byUser: c.by ? commenterMap[String(c.by)] || undefined : undefined,
+    }));
+
+    // compute average rating from comments if available, otherwise fallback to stored userRate
+    let averageRating: number | undefined = undefined;
+    if (comments.length) {
+      const sum = comments.reduce(
+        (s: number, r: any) => s + (typeof r.rate === "number" ? r.rate : 0),
+        0
+      );
+      averageRating = Math.round((sum / comments.length) * 10) / 10;
+    } else if (typeof seller.userRate === "number") {
+      averageRating = Math.round(seller.userRate * 10) / 10;
+    }
+
+    return sendSuccess(res, { page, pageSize, total, averageRating, items });
+  } catch (err: any) {
+    console.error("getSellerReviews error", err);
     return sendError(res, 500, "Server error", err?.message);
   }
 }
