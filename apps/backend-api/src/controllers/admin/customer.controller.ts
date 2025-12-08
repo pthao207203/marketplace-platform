@@ -1,25 +1,46 @@
 import { Request, Response } from "express";
+import { Types } from "mongoose";
 import UserModel from "../../models/user.model";
-import { USER_ROLE } from "../../constants/user.constants";
+import { USER_ROLE, USER_STATUS } from "../../constants/user.constants";
 import { ORDER_STATUS } from "../../constants/order.constants";
 import { sendSuccess, sendError } from "../../utils/response";
 
-// GET /admin/customers
+// GET LIST CUSTOMERS (Danh sách khách hàng)
 export const getListCustomers = async (req: Request, res: Response) => {
   try {
-    const { search, status, date, spentMin, spentMax, purchased, refund } =
-      req.query; // 1. Filter cơ bản cho Role Customer & Trạng thái hoạt động
+    const {
+      search,
+      status,
+      date,
+      spentMin,
+      spentMax,
+      purchased,
+      refund,
+      page,
+      limit,
+    } = req.query;
 
-    const matchStage: any = { userRole: USER_ROLE.CUSTOMER }; // SỬA: Dùng 'userName' thay vì 'name' để tìm kiếm
+    const pageNumber = Number(page) || 1;
+    const limitNumber = Number(limit) || 10;
+    const skip = (pageNumber - 1) * limitNumber;
+
+    const matchStage: any = {
+      userRole: USER_ROLE.CUSTOMER,
+    };
+
     if (search) {
-      matchStage.userName = { $regex: search, $options: "i" };
-    } // SỬA: Dùng 'userStatus' thay vì 'status' để lọc
+      matchStage.$or = [
+        { userName: { $regex: search, $options: "i" } },
+        { userMail: { $regex: search, $options: "i" } },
+      ];
+    }
+
     if (status && status !== "all") {
-      // Lưu ý: Schema dùng USER_STATUS là Number, nên ta cần chắc chắn giá trị status là Number
-      // Nếu Frontend gửi status dạng string ("active", "deleted"), cần mapping lại thành Number tại đây.
-      // Tạm thời để status dưới dạng String nếu không rõ giá trị USER_STATUS là gì.
-      matchStage.userStatus = status;
-    } // SỬA: 'createdAt' là trường mặc định từ timestamps: true
+      const numericStatus = Number(status);
+      if (!isNaN(numericStatus)) {
+        matchStage.userStatus = numericStatus;
+      }
+    }
 
     if (date) {
       const start = new Date(date as string);
@@ -29,25 +50,43 @@ export const getListCustomers = async (req: Request, res: Response) => {
     }
 
     const pipeline: any[] = [
-      { $match: matchStage }, // 2. Lookup Orders (Đảm bảo _id và userId cùng type) // Nếu userId trong Order là String, hãy thêm $addFields: { userIdString: { $toString: "$_id" } } trước bước này
+      { $match: matchStage },
       {
         $lookup: {
           from: "orders",
-          localField: "_id",
-          foreignField: "userId",
+          let: {
+            userIdObj: "$_id",
+            userIdStr: { $toString: "$_id" },
+          },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    {
+                      $or: [
+                        { $eq: ["$orderBuyerId", "$$userIdObj"] },
+                        { $eq: ["$orderBuyerId", "$$userIdStr"] },
+                      ],
+                    },
+                  ],
+                },
+              },
+            },
+          ],
           as: "orders",
         },
-      }, // 3. Tính toán chỉ số & Mapping tên field
+      },
       {
         $project: {
-          _id: 1, // SỬA: Mapping 'userName' thành 'name' cho Frontend
-          name: "$userName", // SỬA: Mapping 'userMail' thành 'email' cho Frontend
-          email: "$userMail", // Dùng đúng tên fields từ Schema
-
+          _id: 1,
+          name: "$userName",
+          email: "$userMail",
           avatar: "$userAvatar",
-          createdAt: 1, // SỬA: Mapping 'userStatus' thành 'status' cho Frontend // LƯU Ý: Frontend của bạn đang mong đợi status là string ("active", "deleted"), // nhưng ở đây ta chỉ trả về Number. Cần chuyển đổi ở Frontend hoặc BE.
+          createdAt: 1,
           status: "$userStatus",
           purchased: { $size: "$orders" },
+
           spent: {
             $sum: {
               $map: {
@@ -63,6 +102,7 @@ export const getListCustomers = async (req: Request, res: Response) => {
               },
             },
           },
+
           refund: {
             $sum: {
               $map: {
@@ -85,7 +125,7 @@ export const getListCustomers = async (req: Request, res: Response) => {
           },
         },
       },
-    ]; // 4. Filter nâng cao trên số liệu đã tính
+    ];
 
     const matchStats: any = {};
     if (spentMin)
@@ -99,7 +139,12 @@ export const getListCustomers = async (req: Request, res: Response) => {
       pipeline.push({ $match: matchStats });
     }
 
-    pipeline.push({ $sort: { createdAt: -1 } });
+    // 5. Sort & Pagination
+    pipeline.push(
+      { $sort: { createdAt: -1 } },
+      { $skip: skip },
+      { $limit: limitNumber }
+    );
 
     const customers = await UserModel.aggregate(pipeline);
 
@@ -112,5 +157,101 @@ export const getListCustomers = async (req: Request, res: Response) => {
       "Lỗi server lấy danh sách khách hàng",
       error?.message
     );
+  }
+};
+
+// GET CUSTOMER DETAIL (Chi tiết khách hàng)
+
+export const getCustomerDetail = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    if (!Types.ObjectId.isValid(id)) {
+      return sendError(res, 400, "ID khách hàng không hợp lệ");
+    }
+
+    const customer = await UserModel.aggregate([
+      { $match: { _id: new Types.ObjectId(id) } },
+      {
+        $lookup: {
+          from: "orders",
+          let: { userIdObj: "$_id", userIdStr: { $toString: "$_id" } },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $or: [
+                    { $eq: ["$orderBuyerId", "$$userIdObj"] },
+                    { $eq: ["$orderBuyerId", "$$userIdStr"] },
+                  ],
+                },
+              },
+            },
+            { $sort: { createdAt: -1 } },
+          ],
+          as: "orders",
+        },
+      },
+      {
+        $project: {
+          _id: 1,
+          name: "$userName",
+          email: "$userMail",
+          phone: "$userPhone",
+          avatar: "$userAvatar",
+          address: "$userAddress",
+          bankAccounts: "$userBanks",
+          joinedDate: "$createdAt",
+          status: "$userStatus",
+          orders: 1,
+
+          totalSpent: {
+            $sum: {
+              $map: {
+                input: {
+                  $filter: {
+                    input: "$orders",
+                    as: "o",
+                    cond: { $eq: ["$$o.orderStatus", ORDER_STATUS.DELIVERED] },
+                  },
+                },
+                as: "order",
+                in: "$$order.orderTotalAmount",
+              },
+            },
+          },
+
+          totalRefunded: {
+            $sum: {
+              $map: {
+                input: {
+                  $filter: {
+                    input: "$orders",
+                    as: "o",
+                    cond: {
+                      $in: [
+                        "$$o.orderStatus",
+                        [ORDER_STATUS.CANCELLED, ORDER_STATUS.RETURNED],
+                      ],
+                    },
+                  },
+                },
+                as: "order",
+                in: "$$order.orderTotalAmount",
+              },
+            },
+          },
+        },
+      },
+    ]);
+
+    if (!customer || customer.length === 0) {
+      return sendError(res, 404, "Không tìm thấy khách hàng");
+    }
+
+    return sendSuccess(res, customer[0]);
+  } catch (error: any) {
+    console.error("Get Customer Detail Error:", error);
+    return sendError(res, 500, "Lỗi server", error?.message);
   }
 };

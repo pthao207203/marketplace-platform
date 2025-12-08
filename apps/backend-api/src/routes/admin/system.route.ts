@@ -1,13 +1,16 @@
-import { Router } from 'express';
-import { requireClientAuth } from '../../middlewares/auth.middleware';
-import { getSystem, putSystem } from '../../controllers/admin/system.controller';
+import { Router } from "express";
+import {
+  getSystemConfig,
+  updateSystemConfig,
+} from "../../controllers/admin/system.controller";
 
 const router = Router();
 
-// GET current system settings (admin/shop only)
-router.get('/', requireClientAuth, getSystem);
+// GET /admin/system
 
-// PUT update system settings (upsert) — admin/shop only
-router.put('/', requireClientAuth, putSystem);
+router.get("/", getSystemConfig);
+
+// PUT /admin/system
+router.put("/", updateSystemConfig);
 
 export default router;

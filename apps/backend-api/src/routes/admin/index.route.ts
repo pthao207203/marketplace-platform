@@ -12,6 +12,8 @@ import userAdminRoute from "./user.route";
 import payRoute from "./pay.route";
 import cloudinaryRoute from "./cloudinary.route";
 import customerRoute from "./customer.route";
+import sellerRoute from "./seller.route";
+import adminListRoute from "./admin.route";
 
 import {
   requireAdminAuth,
@@ -33,19 +35,23 @@ const routeAdmin = (app: Application) => {
 
   app.use(PATH_ADMIN + `/orders`, shopOrAdminMiddlewares, orderRoute);
 
-  app.use(PATH_ADMIN + `/users`, adminMiddlewares, userAdminRoute);
+  app.use(PATH_ADMIN + `/users`, [], userAdminRoute);
 
   app.use(PATH_ADMIN + `/categories`, adminMiddlewares, categoryRoute);
 
   app.use(PATH_ADMIN + `/brands`, adminMiddlewares, brandRoute);
 
-  app.use(PATH_ADMIN + `/system`, adminMiddlewares, systemRoute);
+  app.use(PATH_ADMIN + `/system`, [], systemRoute);
 
   app.use(PATH_ADMIN + `/pay`, adminMiddlewares, payRoute);
 
   app.use(PATH_ADMIN + `/cloudinary`, adminMiddlewares, cloudinaryRoute);
 
-  app.use(PATH_ADMIN + `/customers`, adminMiddlewares, customerRoute);
+  app.use(PATH_ADMIN + `/customers`, [], customerRoute);
+
+  app.use(PATH_ADMIN + `/sellers`, [], sellerRoute);
+
+  app.use(PATH_ADMIN + `/administrators`, [], adminListRoute);
 };
 
 export default routeAdmin;
