@@ -38,7 +38,7 @@ export async function listOrders(req: Request, res: Response) {
         Delivered: ORDER_STATUS.DELIVERED,
         Returned: ORDER_STATUS.RETURNED,
       };
-      
+
       const backendStatus = statusMap[q.status];
       if (backendStatus !== undefined) {
         filter.orderStatus = backendStatus;
@@ -104,7 +104,9 @@ export async function listOrders(req: Request, res: Response) {
         id: String(order._id),
         orderId: order.orderId || `ORD-${String(order._id).slice(-8)}`,
         userId: String(order.orderBuyerId || ""),
-        creationDate: order.createdAt ? new Date(order.createdAt).toISOString() : "",
+        creationDate: order.createdAt
+          ? new Date(order.createdAt).toISOString()
+          : "",
         completionDate: order.deliveredAt
           ? new Date(order.deliveredAt).toISOString()
           : undefined,
@@ -112,7 +114,8 @@ export async function listOrders(req: Request, res: Response) {
         totalPrice: order.orderTotalAmount || 0,
         totalItems: order.orderItems?.length || 0,
         paymentStatus: order.orderPaymentStatus === "paid" ? "Paid" : "Unpaid",
-        canConfirm: order.orderStatus === ORDER_STATUS.PENDING && !order.orderLocked,
+        canConfirm:
+          order.orderStatus === ORDER_STATUS.PENDING && !order.orderLocked,
       };
     });
 
@@ -150,7 +153,7 @@ export async function confirmOrderHandler(req: Request, res: Response) {
     const rawRole =
       typeof user.userRole !== "undefined" ? user.userRole : user.role;
     const roleCode = resolveRoleCode(rawRole);
-    
+
     if (!isSeller && roleCode !== USER_ROLE.ADMIN) {
       return sendError(res, 403, "Forbidden");
     }
@@ -392,7 +395,51 @@ export async function getOrderDetail(req: Request, res: Response) {
     return sendError(res, 500, "Server error", err?.message);
   }
 }
+// GET /api/shops/:shopId/orders
+export async function listShopOrdersByStatusHandler(
+  req: Request,
+  res: Response
+) {
+  try {
+    const user = (req as any).user;
+    if (!user || !user.sub) return sendError(res, 401, "Unauthorized");
 
+    const shopIdFromToken = String(user.sub);
+
+    const shopIdFromPath = req.params.shopId;
+
+    const status = req.query.status as string;
+
+    if (shopIdFromPath !== shopIdFromToken) {
+      return sendError(res, 403, "Forbidden: Shop ID mismatch");
+    }
+
+    const query: any = {};
+
+    query.orderSellerIds = shopIdFromToken;
+
+    if (status) {
+      const statusInt = parseInt(status);
+      if (!isNaN(statusInt)) {
+        query.orderStatus = statusInt;
+      } else {
+        return sendError(res, 400, "Invalid status parameter");
+      }
+    }
+
+    const orders = await OrderModel.find(query).sort({ createdAt: -1 }).lean();
+
+    const wrappedOrders = orders.map((order: any) => ({
+      id: order._id,
+      order: order,
+    }));
+
+    return sendSuccess(res, { orders: wrappedOrders });
+  } catch (err: any) {
+    console.error("listShopOrdersByStatusHandler error", err);
+    return sendError(res, 500, "Server error", err?.message);
+  }
+}
 function resolveRoleCode(role: any): number {
   if (typeof role === "number") return Number(role);
   if (typeof role === "string") {
@@ -405,12 +452,12 @@ function resolveRoleCode(role: any): number {
   }
   return NaN;
 }
-
 export default {
-  listOrders, // ⚠️ THÊM
+  listOrders,
   confirmOrderHandler,
-  cancelOrderHandler, // ⚠️ THÊM
+  cancelOrderHandler,
   listReturnRequests,
   reviewReturnRequest,
   getOrderDetail,
+  listShopOrdersByStatusHandler,
 };

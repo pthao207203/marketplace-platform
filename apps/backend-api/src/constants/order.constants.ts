@@ -48,12 +48,12 @@ export default {
   PAYMENT_STATUS,
 };
 
-// Shipment-related enums
 export const SHIPMENT_STATUS = {
   UNKNOWN: 0,
   LABEL_CREATED: 1,
   PICKED_UP: 2,
   IN_TRANSIT: 3,
+  IN_TRANSIT_ADVANCED: 4,
   OUT_FOR_DELIVERY: 5,
   DELIVERED: 6,
   FAILED: 7,
@@ -61,7 +61,6 @@ export const SHIPMENT_STATUS = {
   RETURNED: 9,
 } as const;
 
-// Mô tả trạng thái shipment bằng tiếng Việt (mapping giá trị số -> mô tả)
 export const SHIPMENT_STATUS_NOTE_VI: Record<number, string> = {
   [SHIPMENT_STATUS.UNKNOWN]: "Không rõ trạng thái",
   [SHIPMENT_STATUS.LABEL_CREATED]: "Đã tạo vận đơn",
@@ -88,7 +87,6 @@ export const SHIPMENT_EVENT_CODE = {
   RETURN_INITIATED: 7,
 } as const;
 
-// Mô tả sự kiện bằng tiếng Việt (mapping giá trị số -> mô tả)
 export const SHIPMENT_EVENT_NOTE_VI: Record<number, string> = {
   [SHIPMENT_EVENT_CODE.PICKED_UP]: "Đơn vị vận chuyển lấy hàng thành công",
   [SHIPMENT_EVENT_CODE.ARRIVAL_FACILITY]: "Đơn hàng đã đến bưu cục",
@@ -105,7 +103,6 @@ export function eventCodeValueToNoteVi(val: number) {
   return SHIPMENT_EVENT_NOTE_VI[val] ?? null;
 }
 
-// helper maps: name <-> value
 const buildReverse = <T extends Record<string, number | string>>(obj: T) =>
   Object.fromEntries(Object.entries(obj).map(([k, v]) => [v as any, k]));
 
@@ -128,10 +125,6 @@ export function eventCodeValueToName(val: number) {
   return (SHIPMENT_EVENT_CODE_NAME as any)[val] ?? null;
 }
 
-// Map eventCode -> shipment status value according to requested rules:
-// - PICKED_UP -> PICKED_UP
-// - ARRIVAL_FACILITY / DEPARTURE_FACILITY -> IN_TRANSIT
-// - OUT_FOR_DELIVERY / DELIVERED / FAILED / RETURN_INITIATED -> corresponding status
 export const EVENT_TO_STATUS: Record<number, number> = {
   [SHIPMENT_EVENT_CODE.PICKED_UP]: SHIPMENT_STATUS.PICKED_UP,
   [SHIPMENT_EVENT_CODE.ARRIVAL_FACILITY]: SHIPMENT_STATUS.IN_TRANSIT,
