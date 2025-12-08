@@ -12,7 +12,16 @@ const trackingWebhook = require("./routes/webhook/trackingmore.route").default;
 
 const app: Application = express();
 
-app.use(helmet());
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+        "img-src": ["'self'", "data:", "res.cloudinary.com"],
+      },
+    },
+  })
+);
 app.use(express.json());
 
 const whitelist = [

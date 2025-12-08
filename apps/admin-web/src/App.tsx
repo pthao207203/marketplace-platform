@@ -22,6 +22,7 @@ import Fixed from "./pages/Products/Fixed";
 import FixedList from "./components/products/FixedList";
 import Auction from "./pages/Products/Auction";
 import AuctionList from "./components/products/AuctionList";
+import DetailOrder from "./components/detailorder/DetailOrder";
 import DetailFixed from "./components/detailproduct/DetailFixed";
 import DetailNegotiation from "./components/detailproduct/DetailNegotiation";
 import DetailAuction from "./components/detailproduct/DetailAuction";
@@ -42,6 +43,7 @@ export default function App() {
         <Route element={<AppLayout />}>
           <Route path="/" element={<Home />} />
           <Route path="/listoforder" element={<ListOfOrder />} />
+          <Route path="/listoforder/:id" element={<DetailOrder />} />
           <Route path="/settings" element={<Settings />} />
 
           <Route path="/user/customers" element={<Customers />}>
