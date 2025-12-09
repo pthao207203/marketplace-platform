@@ -14,7 +14,6 @@ import cloudinaryRoute from "./cloudinary.route";
 import customerRoute from "./customer.route";
 import sellerRoute from "./seller.route";
 import adminListRoute from "./admin.route";
-import shopRoute from "./shop.route";
 
 import {
   requireAdminAuth,
@@ -34,9 +33,7 @@ const routeAdmin = (app: Application) => {
 
   const adminMiddlewares = isDevelopment ? [fakeAdminAuth] : [requireAdminAuth];
 
-  const shopOrAdminMiddlewares = isDevelopment
-    ? [fakeShopOrAdminAuth]
-    : [requireShopOrAdminAuth];
+  const shopOrAdminMiddlewares = [requireShopOrAdminAuth];
 
   console.log(
     ` Auth Mode: ${
@@ -69,8 +66,6 @@ const routeAdmin = (app: Application) => {
   app.use(PATH_ADMIN + `/sellers`, [], sellerRoute);
 
   app.use(PATH_ADMIN + `/administrators`, [], adminListRoute);
-
-  app.use("/api/shops", shopOrAdminMiddlewares, shopRoute);
 };
 
 export default routeAdmin;
