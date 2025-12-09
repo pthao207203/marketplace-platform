@@ -28,17 +28,12 @@ import {
 const routeAdmin = (app: Application) => {
   const PATH_ADMIN = systemConfig.prefixAdmin;
 
-  // ⚠️ CHỌN MIDDLEWARE DỰA TRÊN ENVIRONMENT
   const isDevelopment =
     process.env.NODE_ENV === "development" || process.env.DEV_MODE === "true";
 
-  // Nếu development → dùng fake auth
-  // Nếu production → dùng real auth
   const adminMiddlewares = isDevelopment ? [fakeAdminAuth] : [requireAdminAuth];
 
-  const shopOrAdminMiddlewares = isDevelopment
-    ? [fakeShopOrAdminAuth]
-    : [requireShopOrAdminAuth];
+  const shopOrAdminMiddlewares = [requireShopOrAdminAuth];
 
   console.log(
     ` Auth Mode: ${

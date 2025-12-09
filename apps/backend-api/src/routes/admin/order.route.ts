@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   listOrders,
   confirmOrderHandler,
+  cancelOrderHandler,
   getOrderDetail,
   listReturnRequests,
   reviewReturnRequest,
@@ -9,12 +10,18 @@ import {
 } from "../../controllers/admin/order.controller";
 
 const router = Router();
-router.get("/:shopId/orders", listShopOrdersByStatusHandler);
+
+// Admin/shop list all orders
+router.get("/", listOrders);
+
+router.get("/shops/:shopId/orders", listShopOrdersByStatusHandler);
 // Admin/shop order detail
 router.get("/:id", getOrderDetail);
 
 // Shop confirms an order and shipment is created & simulated
 router.post("/:id/confirm", confirmOrderHandler);
+
+router.post("/:id/cancel", cancelOrderHandler);
 
 // Admin: list pending return requests
 router.get("/returns/pending", listReturnRequests);

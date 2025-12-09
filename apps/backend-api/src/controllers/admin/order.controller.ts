@@ -10,7 +10,7 @@ import { ORDER_STATUS } from "../../constants/order.constants";
 import { USER_ROLE, USER_ROLE_CODE } from "../../constants/user.constants";
 import { parsePaging } from "../../utils/pagination";
 
-// ⚠️ THÊM MỚI: GET /api/admin/orders - LIST ORDERS
+// GET /api/admin/orders - LIST ORDERS
 export async function listOrders(req: Request, res: Response) {
   try {
     const user = (req as any).user;
@@ -238,7 +238,7 @@ export async function confirmOrderHandler(req: Request, res: Response) {
   }
 }
 
-// ⚠️ THÊM MỚI: POST /api/admin/orders/:id/cancel
+// POST /api/admin/orders/:id/cancel
 export async function cancelOrderHandler(req: Request, res: Response) {
   try {
     const user = (req as any).user;
