@@ -1,34 +1,51 @@
-import { Router, Request, Response } from 'express';
-import ShipmentModel from '../../models/shipment.model';
-import axios from 'axios';
-import { upsertFromProvider } from '../../utils/shipment-service';
-import { eventCodeNameToValue } from '../../constants/order.constants';
-import { mapDescToEventCode, mapStatusToUnified } from '../../utils/mapper';
+import { Router, Request, Response } from "express";
+import ShipmentModel from "../../models/shipment.model";
+import axios from "axios";
+import { upsertFromProvider } from "../../utils/shipment-service";
+import { eventCodeNameToValue } from "../../constants/order.constants";
+import { mapDescToEventCode, mapStatusToUnified } from "../../utils/mapper";
 const router = Router();
 
 // POST /trackingmore - webhook receiver from tracking service
-router.post('/', async (req: Request, res: Response) => {
+router.post("/", async (req: Request, res: Response) => {
   try {
-    const trackingNumber = req.body?.data?.tracking_number || req.body?.tracking_number;
+    const trackingNumber =
+      req.body?.data?.tracking_number || req.body?.tracking_number;
     const courierCode = req.body?.data?.courier_code || req.body?.courier_code;
     const event = req.body?.event || req.body?.tracking_event || null;
-
-    if (!trackingNumber || !courierCode) return res.status(200).json({ ok: true });
+    console.info('tracking webhook body:', JSON.stringify(req.body));
+    if (!trackingNumber || !courierCode) {
+      console.warn(
+        "trackingmore webhook: missing trackingNumber or courierCode",
+        { trackingNumber, courierCode }
+      );
+      return res
+        .status(400)
+        .json({ ok: false, message: "missing trackingNumber or courierCode" });
+    }
 
     const s = await ShipmentModel.findOne({ trackingNumber, courierCode });
-    if (!s) return res.status(200).json({ ok: true });
+    if (!s) {
+      console.warn("trackingmore webhook: shipment not found", {
+        trackingNumber,
+        courierCode,
+      });
+      return res.status(404).json({ ok: false, message: "shipment not found" });
+    }
 
     if (event) {
       s.events = s.events || [];
-      const desc = event.description || event.note || '';
-      const code = event.status ? eventCodeNameToValue(event.status) : mapDescToEventCode(desc);
+      const desc = event.description || event.note || "";
+      const code = event.status
+        ? eventCodeNameToValue(event.status)
+        : mapDescToEventCode(desc);
 
       s.events.push({
         eventTime: new Date(),
         description: desc,
-        location: event.location || '',
+        location: event.location || "",
         eventCode: code,
-        raw: event
+        raw: event,
       });
 
       s.lastSyncedAt = new Date();
@@ -44,11 +61,19 @@ router.post('/', async (req: Request, res: Response) => {
 
       await s.save();
       try {
-        const trackingDataForUpsert = { status: event.status, checkpoints: [event], tracking_number: trackingNumber, courier_code: courierCode };
+        const trackingDataForUpsert = {
+          status: event.status,
+          checkpoints: [event],
+          tracking_number: trackingNumber,
+          courier_code: courierCode,
+        };
         // console.info('trackingmore webhook: calling upsertFromProvider for shipment', String(s._id));
         await upsertFromProvider(String(s._id), trackingDataForUpsert);
       } catch (e: any) {
-        console.error('upsertFromProvider failed in webhook path', e?.message || e);
+        console.error(
+          "upsertFromProvider failed in webhook path",
+          e?.message || e
+        );
       }
       return res.json({ ok: true });
     }
@@ -58,7 +83,9 @@ router.post('/', async (req: Request, res: Response) => {
     if (!trackingServiceUrl) return res.json({ ok: true });
 
     const resp = await axios.get(
-      `${trackingServiceUrl.replace(/\/$/, '')}/tracking/${encodeURIComponent(courierCode)}/${encodeURIComponent(trackingNumber)}`
+      `${trackingServiceUrl.replace(/\/$/, "")}/tracking/${encodeURIComponent(
+        courierCode
+      )}/${encodeURIComponent(trackingNumber)}`
     );
     const trackingData = resp.data || null;
     if (trackingData) {
@@ -67,7 +94,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     return res.json({ ok: true });
   } catch (err: any) {
-    console.error('trackingmore webhook error', err?.message || err);
+    console.error("trackingmore webhook error", err?.message || err);
     return res.status(500).json({ ok: false, error: err?.message || err });
   }
 });

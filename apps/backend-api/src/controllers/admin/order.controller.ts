@@ -38,7 +38,7 @@ export async function listOrders(req: Request, res: Response) {
         Delivered: ORDER_STATUS.DELIVERED,
         Returned: ORDER_STATUS.RETURNED,
       };
-      
+
       const backendStatus = statusMap[q.status];
       if (backendStatus !== undefined) {
         filter.orderStatus = backendStatus;
@@ -104,7 +104,9 @@ export async function listOrders(req: Request, res: Response) {
         id: String(order._id),
         orderId: order.orderId || `ORD-${String(order._id).slice(-8)}`,
         userId: String(order.orderBuyerId || ""),
-        creationDate: order.createdAt ? new Date(order.createdAt).toISOString() : "",
+        creationDate: order.createdAt
+          ? new Date(order.createdAt).toISOString()
+          : "",
         completionDate: order.deliveredAt
           ? new Date(order.deliveredAt).toISOString()
           : undefined,
@@ -112,7 +114,8 @@ export async function listOrders(req: Request, res: Response) {
         totalPrice: order.orderTotalAmount || 0,
         totalItems: order.orderItems?.length || 0,
         paymentStatus: order.orderPaymentStatus === "paid" ? "Paid" : "Unpaid",
-        canConfirm: order.orderStatus === ORDER_STATUS.PENDING && !order.orderLocked,
+        canConfirm:
+          order.orderStatus === ORDER_STATUS.PENDING && !order.orderLocked,
       };
     });
 
@@ -150,7 +153,7 @@ export async function confirmOrderHandler(req: Request, res: Response) {
     const rawRole =
       typeof user.userRole !== "undefined" ? user.userRole : user.role;
     const roleCode = resolveRoleCode(rawRole);
-    
+
     if (!isSeller && roleCode !== USER_ROLE.ADMIN) {
       return sendError(res, 403, "Forbidden");
     }
@@ -172,7 +175,7 @@ export async function confirmOrderHandler(req: Request, res: Response) {
         ? "TRACKINGMORE"
         : "SIMULATOR";
 
-    const shipment = await ShipmentModel.create({
+    let shipment = await ShipmentModel.create({
       courierCode: courierName,
       trackingNumber: null,
       currentStatus: 1,
@@ -182,8 +185,8 @@ export async function confirmOrderHandler(req: Request, res: Response) {
     });
 
     // External Tracking Logic
+    const trackingServiceUrl = process.env.TRACKING_SERVICE_URL;
     try {
-      const trackingServiceUrl = process.env.TRACKING_SERVICE_URL;
       if (trackingServiceUrl) {
         const callbackUrl = `${
           process.env.MAIN_APP_URL || "http://localhost:3000"
@@ -199,22 +202,80 @@ export async function confirmOrderHandler(req: Request, res: Response) {
         );
 
         const body = resp.data || {};
-        if (body.trackingNumber) {
-          shipment.trackingNumber = body.trackingNumber;
-          shipment.courierCode = body.courierCode || courierName;
+        console.info("confirmOrder: tracking service response:", {
+          status: resp.status,
+          data: body,
+        });
 
-          console.log("confirmOrder: received tracking number", {
-            trackingNumber: shipment.trackingNumber,
-            courierCode: shipment.courierCode,
-          });
-          await shipment.save();
+        // Robustly extract tracking number from different provider response shapes
+        let trackingNum: string | undefined = undefined;
+        trackingNum =
+          body.trackingNumber ||
+          body.tracking_number ||
+          (body.data &&
+            (body.data.tracking_number || body.data.trackingNumber)) ||
+          undefined;
 
-          if (body.trackingData) {
+        // Fallback when using local/mock tracking provider: derive from orderId
+        if (
+          !trackingNum &&
+          (process.env.TRACKING_PROVIDER === "mock" ||
+            trackingServiceUrl.includes("localhost"))
+        ) {
+          trackingNum = `ORD-${String(orderId)}`;
+          console.info(
+            "confirmOrder: falling back to derived tracking number",
+            trackingNum
+          );
+        }
+
+        if (trackingNum) {
+          try {
+            // persist trackingNumber/courierCode using an explicit update to avoid
+            // issues when the returned `shipment` instance is not a full mongoose document
+            const upRes: any = await ShipmentModel.updateOne(
+              { _id: shipment._id },
+              {
+                $set: {
+                  trackingNumber: trackingNum,
+                  courierCode: body.courierCode || courierName,
+                },
+              }
+            );
+
+            console.log("confirmOrder: updateOne result", upRes);
+            console.log("confirmOrder: persisted tracking number", {
+              shipmentId: String(shipment._id),
+              trackingNumber: trackingNum,
+              courierCode: body.courierCode || courierName,
+            });
+
+            // reload shipment for response
             try {
-              await upsertFromProvider(String(shipment._id), body.trackingData);
+              const reloaded = await ShipmentModel.findById(
+                String(shipment._id)
+              );
+              console.log(
+                "confirmOrder: reloaded shipment after update",
+                reloaded
+              );
+              if (reloaded) shipment = reloaded as any;
             } catch (e) {
-              console.error("upsertFromProvider error", e);
+              console.error("failed to reload shipment after update", e);
             }
+
+            if (body.trackingData) {
+              try {
+                await upsertFromProvider(
+                  String(shipment._id),
+                  body.trackingData
+                );
+              } catch (e) {
+                console.error("upsertFromProvider error", e);
+              }
+            }
+          } catch (e: any) {
+            console.error("failed to persist tracking number", e?.message || e);
           }
         } else {
           console.warn("tracking service did not return trackingNumber", body);
@@ -224,8 +285,16 @@ export async function confirmOrderHandler(req: Request, res: Response) {
       console.error("call to tracking service failed", err?.message || err);
     }
 
-    if (process.env.TRACKING_PROVIDER !== "trackingmore") {
+    // Only run the in-memory shipment simulator when explicitly enabled.
+    // This avoids automatic status updates in dev environments unless the
+    // administrator sets ENABLE_SHIPMENT_SIMULATOR=true.
+    if (
+      process.env.TRACKING_PROVIDER !== "trackingmore" &&
+      String(process.env.ENABLE_SHIPMENT_SIMULATOR).toLowerCase() === "true"
+    ) {
       startSimulation(String(shipment._id));
+    } else {
+      console.info("shipment simulator not started (disabled by env)");
     }
 
     return sendSuccess(res, { shipment, orderId }, 201);

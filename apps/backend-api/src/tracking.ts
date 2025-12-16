@@ -10,7 +10,7 @@ const { upsertFromProvider } = require("./utils/shipment-service");
 
 const app = express();
 app.use(bodyParser.json({ limit: "1mb" }));
-
+console.log("mongo connecting to", process.env.MONGO_URI);
 mongoose
   .connect(process.env.MONGO_URI || "", { dbName: "shop" })
   .catch((err: any) => console.error("mongo connect err", err));
@@ -87,6 +87,7 @@ app.post("/simulate", async (req: Request, res: Response) => {
     if (mainAppUrl) {
       const axios = require("axios");
       const webhookUrl = `${mainAppUrl.replace(/\/$/, "")}/trackingmore`;
+      console.log(`Posting simulated event to main app webhook ${webhookUrl}`);
       try {
         await axios.post(webhookUrl, {
           data: { tracking_number: trackingNumber, courier_code: courierCode },
