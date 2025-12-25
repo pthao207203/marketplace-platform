@@ -33,7 +33,9 @@ const routeAdmin = (app: Application) => {
 
   const adminMiddlewares = isDevelopment ? [fakeAdminAuth] : [requireAdminAuth];
 
-  const shopOrAdminMiddlewares = [requireShopOrAdminAuth];
+  const shopOrAdminMiddlewares = isDevelopment
+    ? [fakeShopOrAdminAuth]
+    : [requireShopOrAdminAuth];
 
   console.log(
     ` Auth Mode: ${

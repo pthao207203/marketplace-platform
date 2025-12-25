@@ -970,15 +970,6 @@ export async function deleteBankByName(req: Request, res: Response) {
       return sendError(res, 401, "Unauthorized");
     if (!name || !name.trim()) return sendError(res, 400, "Missing bank name");
 
-    const system = (await getSystemSettings()) as any;
-    const partnerBanks: any[] = system?.partnerBanks ?? [];
-    // 👇 Sửa lỗi TS7006
-    const match = partnerBanks.find(
-      (p: any) =>
-        String(p.name || "").toLowerCase() === String(name).toLowerCase()
-    );
-    if (!match) return sendError(res, 404, "Bank provider not found");
-
     const regex = new RegExp(
       "^" + escapeRegExp(String(name).trim()) + "$",
       "i"
